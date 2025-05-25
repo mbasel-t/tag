@@ -1,15 +1,3 @@
-def _push_robots(self):
-    """Random pushes the robots. Emulates an impulse by setting a randomized base velocity."""
-    if self.push_interval_s > 0 and not self.debug:
-        max_push_vel_xy = self.cfg.domain_rand.max_push_vel_xy
-        # in Genesis, base link also has DOF, it's 6DOF if not fixed.
-        dofs_vel = self.robot.get_dofs_velocity()  # (num_envs, num_dof) [0:3] ~ base_link_vel
-        push_vel = gs_rand_float(-max_push_vel_xy, max_push_vel_xy, (self.num_envs, 2), self.device)
-        push_vel[((self.common_step_counter + self.env_identities) % int(self.push_interval_s / self.dt) != 0)] = 0
-        dofs_vel[:, :2] += push_vel
-        self.robot.set_dofs_velocity(dofs_vel)
-
-
 def _update_terrain_curriculum(self, env_ids):
     """Implements the game-inspired curriculum.
 
