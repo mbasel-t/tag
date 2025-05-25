@@ -14,9 +14,10 @@ import torch
 # from legged_gym.utils.terrain import Terrain
 
 # from .legged_robot_config import LeggedRobotCfg
+from ..domain_rand_mixin import DomainRandMixin
 
 
-class LeggedRobot:
+class LeggedRobot(DomainRandMixin):
     def __init__(self, cfg: LeggedRobotCfg, sim_device, headless):
         """Parses the provided config file,
             calls create_sim() (which creates, simulation, terrain and environments),
@@ -148,13 +149,14 @@ class LeggedRobot:
 
         self._resample_commands(env_ids)
 
-        # domain randomization
-        if self.cfg.domain_rand.randomize_friction:
-            self._randomize_friction(env_ids)
-        if self.cfg.domain_rand.randomize_base_mass:
-            self._randomize_base_mass(env_ids)
-        if self.cfg.domain_rand.randomize_com_displacement:
-            self._randomize_com_displacement(env_ids)
+        if any(
+            [
+                self.cfg.domain_rand.randomize_friction,
+                self.cfg.domain_rand.randomize_base_mass,
+                self.cfg.domain_rand.randomize_com_displacement,
+            ]
+        ):
+            self.dr(env_ids)
 
         # reset buffers
         self.last_actions[env_ids] = 0.0
@@ -529,15 +531,14 @@ class LeggedRobot:
             self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
             self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
 
-        # randomize friction
-        if self.cfg.domain_rand.randomize_friction:
-            self._randomize_friction(np.arange(self.num_envs))
-        # randomize base mass
-        if self.cfg.domain_rand.randomize_base_mass:
-            self._randomize_base_mass(np.arange(self.num_envs))
-        # randomize COM displacement
-        if self.cfg.domain_rand.randomize_com_displacement:
-            self._randomize_com_displacement(np.arange(self.num_envs))
+        if any(
+            [
+                self.cfg.domain_rand.randomize_friction,
+                self.cfg.domain_rand.randomize_base_mass,
+                self.cfg.domain_rand.randomize_com_displacement,
+            ]
+        ):
+            self.dr(np.arange(self.num_envs))
 
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.dt
