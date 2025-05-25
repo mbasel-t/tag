@@ -318,13 +318,16 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         return noise_vec
 
     # ----------------------------------------
-    def _init_buffers(self):
-        """Initialize torch tensors which will contain simulation states and processed quantities"""
+    def _init_env_tracking(self):
+        """Setup counters and noise scale."""
         self.common_step_counter = 0
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
         self.forward_vec = torch.zeros((self.num_envs, 3), device=self.device, dtype=gs.tc_float)
         self.forward_vec[:, 0] = 1.0
+
+    def _init_state_tensors(self):
+        """Allocate buffers for state and observation."""
         self.base_init_pos = torch.tensor(self.cfg.init_state.pos, device=self.device)
         self.base_init_quat = torch.tensor(self.cfg.init_state.rot, device=self.device)
         self.base_lin_vel = torch.zeros((self.num_envs, 3), device=self.device, dtype=gs.tc_float)
@@ -337,6 +340,9 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         self.rew_buf = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
         self.reset_buf = torch.ones((self.num_envs,), device=self.device, dtype=gs.tc_int)
         self.episode_length_buf = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_int)
+
+    def _init_command_buffers(self):
+        """Set up command buffers."""
         self.commands = torch.zeros(
             (self.num_envs, self.cfg.commands.num_commands),
             device=self.device,
@@ -347,12 +353,18 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
             device=self.device,
             dtype=gs.tc_float,
             requires_grad=False,
-        )  # TODO change this
+        )
+
+    def _init_actuation_buffers(self):
+        """Buffers used for actions and DOFs."""
         self.actions = torch.zeros((self.num_envs, self.num_actions), device=self.device, dtype=gs.tc_float)
         self.last_actions = torch.zeros_like(self.actions)
         self.dof_pos = torch.zeros_like(self.actions)
         self.dof_vel = torch.zeros_like(self.actions)
         self.last_dof_vel = torch.zeros_like(self.actions)
+
+    def _init_contact_buffers(self):
+        """Contact related buffers."""
         self.base_pos = torch.zeros((self.num_envs, 3), device=self.device, dtype=gs.tc_float)
         self.base_quat = torch.zeros((self.num_envs, 4), device=self.device, dtype=gs.tc_float)
         self.feet_air_time = torch.zeros(
@@ -367,26 +379,19 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
             dtype=gs.tc_float,
         )
         self.continuous_push = torch.zeros((self.num_envs, 3), device=self.device, dtype=gs.tc_float)
-        self.env_identities = torch.arange(
-            self.num_envs,
-            device=self.device,
-            dtype=gs.tc_int,
-        )
-        self.terrain_heights = torch.zeros(
-            (self.num_envs,),
-            device=self.device,
-            dtype=gs.tc_float,
-        )
+        self.env_identities = torch.arange(self.num_envs, device=self.device, dtype=gs.tc_int)
+        self.terrain_heights = torch.zeros((self.num_envs,), device=self.device, dtype=gs.tc_float)
         if self.cfg.terrain.measure_heights:
             self.height_points = self._init_height_points()
         self.measured_heights = 0
 
+    def _init_pd_gains(self):
+        """Default pose and PD gains."""
         self.default_dof_pos = torch.tensor(
             [self.cfg.init_state.default_joint_angles[name] for name in self.cfg.asset.dof_names],
             device=self.device,
             dtype=gs.tc_float,
         )
-        # PD control
         stiffness = self.cfg.control.stiffness
         damping = self.cfg.control.damping
 
@@ -400,9 +405,17 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         self.d_gains = torch.tensor(self.d_gains, device=self.device)
         self.batched_p_gains = self.p_gains[None, :].repeat(self.num_envs, 1)
         self.batched_d_gains = self.d_gains[None, :].repeat(self.num_envs, 1)
-        # PD control params
         self.robot.set_dofs_kp(self.p_gains, self.motor_dofs)
         self.robot.set_dofs_kv(self.d_gains, self.motor_dofs)
+
+    def _init_buffers(self):
+        """Allocate tensors used during simulation."""
+        self._init_env_tracking()
+        self._init_state_tensors()
+        self._init_command_buffers()
+        self._init_actuation_buffers()
+        self._init_contact_buffers()
+        self._init_pd_gains()
 
     def _create_envs(self):
         self._get_env_origins()
