@@ -1,4 +1,46 @@
+from dataclasses import dataclass
+
 import torch
+
+from tag.gym.base.config import defaultcls
+
+
+@dataclass
+class RewardScales:
+    # limitation
+    dof_pos_limits: float = -10.0
+    collision: float = -1.0
+
+    # command tracking
+    tracking_lin_vel: float = 1.0
+    tracking_ang_vel: float = 0.5
+
+    # smooth
+    lin_vel_z: float = -2.0
+    base_height: float = -1.0
+    ang_vel_xy: float = -0.05
+    orientation: float = -1.0
+    dof_vel: float = -5.0e-4
+    dof_acc: float = -2.0e-7
+    action_rate: float = -0.01
+    torques: float = -2.0e-4
+
+    # gait
+    feet_air_time: float = 1.0
+    # dof_close_to_default: float = -0.05
+
+
+@dataclass
+class DenseReward:
+    soft_dof_pos_limit: float = 0.9
+    base_height_target: float = 0.36
+
+    scales: RewardScales = defaultcls(RewardScales)
+
+
+@datataclass
+class SparseReward:
+    pass
 
 
 def _prepare_reward_function(self):
