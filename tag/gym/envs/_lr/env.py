@@ -12,11 +12,13 @@ import torch
 # from legged_gym.utils.helpers import class_to_dict
 # from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi
 # from legged_gym.utils.terrain import Terrain
-
 # from .legged_robot_config import LeggedRobotCfg
+from tag.gym.base.env import BaseEnv
+
+# from tag.gym.envs._lr.dr
 
 
-class LeggedRobot:
+class LeggedRobot(BaseEnv, DRMixin):
     def __init__(self, cfg: LeggedRobotCfg, sim_device, headless):
         """Parses the provided config file,
             calls create_sim() (which creates, simulation, terrain and environments),
@@ -181,25 +183,9 @@ class LeggedRobot:
 
     def create_sim(self):
         """Creates simulation, terrain and evironments"""
-        # create scene
-        self.scene = gs.Scene(
-            sim_options=gs.options.SimOptions(dt=self.sim_dt, substeps=self.sim_substeps),
-            viewer_options=gs.options.ViewerOptions(
-                max_FPS=int(1 / self.dt * self.cfg.control.decimation),
-                camera_pos=(2.0, 0.0, 2.5),
-                camera_lookat=(0.0, 0.0, 0.5),
-                camera_fov=40,
-            ),
-            vis_options=gs.options.VisOptions(n_rendered_envs=min(self.cfg.viewer.num_rendered_envs, self.num_envs)),
-            rigid_options=gs.options.RigidOptions(
-                dt=self.sim_dt,
-                constraint_solver=gs.constraint_solver.Newton,
-                enable_collision=True,
-                enable_joint_limit=True,
-                enable_self_collision=self.cfg.asset.self_collisions,
-            ),
-            show_viewer=not self.headless,
-        )
+
+        self._init_scene()
+
         # query rigid solver
         for solver in self.scene.sim.solvers:
             if not isinstance(solver, RigidSolver):
