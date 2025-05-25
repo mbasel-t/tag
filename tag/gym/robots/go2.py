@@ -6,13 +6,7 @@ from gymnasium import spaces
 import numpy as np
 import torch
 
-from tag.gym.base.config import (
-    Asset,
-    Control,
-    InitState,
-    RobotConfig,
-    default,
-)
+from tag.gym.base.config import Asset, Control, InitState, RobotConfig, default
 from tag.gym.robots.robot import Robot
 
 
@@ -46,9 +40,31 @@ class Go2Config(RobotConfig):
         )
     )
 
+    dof_names: list[str] = default(
+        [
+            "FR_hip_joint",
+            "FR_thigh_joint",
+            "FR_calf_joint",
+            "FL_hip_joint",
+            "FL_thigh_joint",
+            "FL_calf_joint",
+            "RR_hip_joint",
+            "RR_thigh_joint",
+            "RR_calf_joint",
+            "RL_hip_joint",
+            "RL_thigh_joint",
+            "RL_calf_joint",
+        ]
+    )
+    foot_name: list[str] = default(["foot"])
+    penalize_contacts_on: list[str] = default(["thigh", "calf"])
+    terminate_after_contacts_on: list[str] = default(["base"])
+    links_to_keep: list[str] = default(["FL_foot", "FR_foot", "RL_foot", "RR_foot"])
+    self_collisions: bool = True
+
 
 class Go2Robot(Robot):
-    def __init__(self, scene: gs.Scene, cfg: Go2Config, n_envs: int, color: Tuple | None):
+    def __init__(self, scene: gs.Scene, cfg: Go2Config, n_envs: int, color: Tuple | None = None):
         # TODO: Figure out spaces without passing n_envs through
         self.cfg = cfg
         self.robot = scene.add_entity(
@@ -123,3 +139,25 @@ class Go2Robot(Robot):
 
     def compute_observations(self) -> Dict:
         return self.observe_state()
+
+    @property
+    def dofs(self):
+        return [self.robot.get_joint(name).dof_idx_local for name in self.cfg.dof_names]
+
+    @property
+    def indecies(self):
+        idxs = {
+            "terminate": self.find_link_indices(self.cfg.terminate_after_contacts_on),
+            "penalize": self.find_link_indices(self.cfg.penalize_contacts_on),
+            "links": self.find_link_indices(self.cfg.links_to_keep),
+            "feet": self.find_link_indices(self.cfg.foot_name),
+        }
+        return idxs
+
+    @property
+    def pos_limits(self):
+        return torch.stack(self.robot.get_dofs_limit(self.dofs), dim=1)
+
+    @property
+    def torque_limits(self):
+        return self.robot.get_dofs_force_range(self.dofs)[1]

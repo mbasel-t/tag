@@ -35,3 +35,13 @@ class Robot:
     def reset(self) -> None: ...
 
     def act(self, action: torch.Tensor, mode: str = "control") -> None: ...
+
+    def find_link_indices(self, names):
+        """Find the indices of the links in the robot."""
+        return [
+            link.idx - self.robot.link_start for link in self.robot.links if any(name in link.name for name in names)
+        ]
+
+    @property
+    def link_names(self):
+        return [link.name for link in self.robot.links]
