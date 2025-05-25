@@ -8,14 +8,16 @@ import genesis as gs
 from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
 import torch
 
+from tag.utils import default
+
 
 @dataclass
 class DR:
     """pass empty list to turn off randomization"""
 
-    friction: list[float] = [0.2, 1.7]
-    mass: list[float] = [-1.0, 1.0]
-    com: list[float] = [-0.01, 0.01]  # center of mass displacement
+    friction: list[float] = default([0.2, 1.7])
+    mass: list[float] = default([-1.0, 1.0])
+    com: list[float] = default([-0.01, 0.01])  # center of mass displacement
 
     push_robots: bool = True
     push_interval_s: int = 15
@@ -56,6 +58,7 @@ class DomainRandMixin:
 
     def dr(self, envs=None) -> None:
         """Apply enabled randomizations."""
+
         if envs is None:
             envs = torch.arange(self.n_envs, device=self.device)
         if self.cfg.dr.friction:

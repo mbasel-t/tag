@@ -18,11 +18,11 @@ class CameraMixin:
     def _setup_camera(self) -> None:
         """Create the floating camera from ``self.cfg.viewer``."""
         self.floating_camera = self.scene.add_camera(
-            res=(1280, 960),
-            pos=np.array(self.cfg.viewer.pos),
-            lookat=np.array(self.cfg.viewer.lookat),
-            fov=getattr(self.cfg.viewer, "fov", 40),
-            GUI=True,
+            res=self.cfg.vis.res,
+            pos=np.array(self.cfg.vis.pos),
+            lookat=np.array(self.cfg.vis.lookat),
+            fov=self.cfg.vis.fov,
+            GUI=not self.cfg.viewer.gui,
         )
         self._recording = False
         self._recorded_frames = []
