@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 from tag.gym.base.env import BaseEnv
+from tag.gym.envs.mixins.cam import CameraMixin
 from tag.gym.envs.mixins.dr import DomainRandMixin
 from tag.gym.envs.mixins.terrain import TerrainMixin
 
@@ -18,7 +19,7 @@ from .noise import ObservationNoise
 # from .legged_robot_config import LeggedRobotCfg
 
 
-class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
+class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin, CameraMixin):
     def __init__(self, cfg):
         super().__init__(self.cfg)
         self.cfg = cfg
@@ -161,10 +162,6 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         if self.cfg.env.send_timeouts:
             self.extras["time_outs"] = self.time_out_buf
 
-    def set_camera(self, pos, lookat):
-        """Set camera position and direction"""
-        self.floating_camera.set_pose(pos=pos, lookat=lookat)
-
     # ------------- Callbacks --------------
     def _prepare_quantities(self):
         """Collect robot state tensors"""
@@ -206,19 +203,6 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
             "dof_vel": dof_vel,
             "link_contact_forces": link_contact_forces,
         }
-
-    def _setup_camera(self):
-        """Set camera position and direction"""
-        self.floating_camera = self.scene.add_camera(
-            res=(1280, 960),
-            pos=np.array(self.cfg.viewer.pos),
-            lookat=np.array(self.cfg.viewer.lookat),
-            fov=40,
-            GUI=True,
-        )
-
-        self._recording = False
-        self._recorded_frames = []
 
     def _post_physics_step_callback(self):
         """Callback called before computing terminations, rewards, and observations
