@@ -37,18 +37,17 @@ class BaseEnv:
         return self._max_steps
 
     def _init_scene(self) -> gs.Scene:
-        self.headless = not self.cfg.viewer.show_viewer
         self.scene = gs.Scene(
-            show_viewer=not self.headless,
+            show_viewer=not self.cfg.viewer.headless,
             vis_options=gs.options.VisOptions(
                 show_world_frame=self.cfg.vis.show_world_frame,
                 n_rendered_envs=self.cfg.vis.n_rendered_envs,
             ),
             # physics
-            sim_options=gs.options.SimOptions(dt=self.sim_dt, substeps=self.sim_substeps),
+            sim_options=gs.options.SimOptions(dt=self.cfg.sim.dt, substeps=self.cfg.sim.substeps),
             rigid_options=gs.options.RigidOptions(
                 enable_joint_limit=self.cfg.solver.joint_limit,
-                dt=self.cfg.solver.dt,  # TODO rename solver.dt ?
+                dt=self.cfg.solver.dt,  # TODO rename solver.dt to control.dt ?
             ),
         )
 

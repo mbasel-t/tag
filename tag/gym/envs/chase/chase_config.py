@@ -21,6 +21,7 @@ class Go2EnvConfig(EnvConfig):
     solver: Solver = default(Solver())
     sim: Sim = default(Sim())
     robot: Go2Config = default(Go2Config())
+    n_robots: int = 1
 
 
 # --- Task Environments ---
