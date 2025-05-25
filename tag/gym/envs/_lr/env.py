@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from tag.gym.base.env import BaseEnv
-from tag.gym.envs.domain_rand_mixin import DomainRandMixin
+from tag.gym.envs.mixins.dr import DomainRandMixin
 from tag.gym.envs.mixins.terrain import TerrainMixin
 
 # from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -67,11 +67,8 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         # return clipped obs, clipped states (None), rewards, dones and infos
         clip_obs = self.cfg.normalization.clip_observations
         self.obs_buf = torch.clip(self.obs_buf, -clip_obs, clip_obs)
-        if self.privileged_obs_buf is not None:
-            self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
         return (
             self.obs_buf,
-            self.privileged_obs_buf,
             self.rew_buf,
             self.reset_buf,
             self.extras,
@@ -133,9 +130,9 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         """
         if len(env_ids) == 0:
             return
-        # update curriculum
-        if self.cfg.terrain.curriculum:
-            self._update_terrain_curriculum(env_ids)
+
+        self._update_terrain_curriculum(env_ids)
+
         # avoid updating command curriculum at each step since the maximum command is common to all envs
         if self.cfg.commands.curriculum and (self.common_step_counter % self.max_episode_length == 0):
             self.update_command_curriculum(env_ids)
@@ -169,6 +166,7 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
                 torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             )
             self.episode_sums[key][env_ids] = 0.0
+
         # log additional curriculum info
         if self.cfg.terrain.curriculum:
             self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
@@ -200,7 +198,7 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         """Callback called before computing terminations, rewards, and observations
         Default behaviour: Compute ang vel command based on target and heading, compute measured terrain heights and randomly push robots
         """
-        #
+
         env_ids = (
             (self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt) == 0)
             .nonzero(as_tuple=False)
@@ -458,14 +456,11 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         self.reward_scales = class_to_dict(self.cfg.rewards.scales)
         self.command_ranges = class_to_dict(self.cfg.commands.ranges)
 
-        if self.cfg.terrain.mesh_type not in ["heightfield"]:
-            self.cfg.terrain.curriculum = False
+        # self.max_episode_length_s = self.cfg.env.episode_length_s
+        # self.max_episode_length = np.ceil(self.max_episode_length_s / self.dt)
 
-        self.max_episode_length_s = self.cfg.env.episode_length_s
-        self.max_episode_length = np.ceil(self.max_episode_length_s / self.dt)
-
-        self.push_interval_s = self.cfg.domain_rand.push_interval_s
+        # self.push_interval_s = self.cfg.domain_rand.push_interval_s
 
         self.dof_names = self.cfg.asset.dof_names
-        self.simulate_action_latency = self.cfg.domain_rand.simulate_action_latency
-        self.debug = self.cfg.env.debug
+        # self.simulate_action_latency = self.cfg.domain_rand.simulate_action_latency
+        # self.debug = self.cfg.env.debug

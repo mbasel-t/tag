@@ -1,4 +1,9 @@
 class TerrainMixin:
+    def validate(self):
+        # TODO this should go somewhere else ? like terrain config
+        if self.cfg.terrain.mesh_type not in ["heightfield"]:
+            self.cfg.terrain.curriculum = False
+
     def _init_terrain(self):
         # add terrain
         mesh_type = self.cfg.terrain.mesh_type
@@ -45,3 +50,7 @@ class TerrainMixin:
         self.scene.draw_debug_spheres(
             height_points[0, :], radius=0.03, color=(0, 0, 1, 0.7)
         )  # only draw for the first env
+
+    def _update_terrain_curriculum(self, env_ids):
+        if not self.cfg.terrain.curriculum:
+            return
