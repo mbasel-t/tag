@@ -1,10 +1,11 @@
-import os
-
 import genesis as gs
-from genesis.engine.solvers.rigid.rigid_solver_decomp import RigidSolver
 from genesis.utils.geom import inv_quat, transform_by_quat
 import numpy as np
 import torch
+
+from tag.gym.base.env import BaseEnv
+from tag.gym.envs.domain_rand_mixin import DomainRandMixin
+from tag.gym.envs.mixins.terrain import TerrainMixin
 
 # from legged_gym import LEGGED_GYM_ROOT_DIR
 # from legged_gym.envs.base.base_task import BaseTask
@@ -13,33 +14,29 @@ import torch
 # from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi
 # from legged_gym.utils.terrain import Terrain
 # from .legged_robot_config import LeggedRobotCfg
-from tag.gym.base.env import BaseEnv
-
-# from tag.gym.envs._lr.dr
 
 
-class LeggedRobot(BaseEnv, DRMixin):
-    def __init__(self, cfg: LeggedRobotCfg, sim_device, headless):
-        """Parses the provided config file,
-            calls create_sim() (which creates, simulation, terrain and environments),
-            initilizes pytorch buffers used during training
-
-        Args:
-            cfg (Dict): Environment config file
-            device_type (string): 'cuda' or 'cpu'
-            device_id (int): 0, 1, ...
-            headless (bool): Run without rendering if True
-        """
+class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
+    def __init__(self, cfg):
+        super().__init__(self.cfg)
         self.cfg = cfg
-        self.height_samples = None
-        self.debug_viz = self.cfg.env.debug_viz
-        self.init_done = False
-        self._parse_cfg(self.cfg)
-        super().__init__(self.cfg, sim_device, headless)
 
-        self._init_buffers()
-        self._prepare_reward_function()
-        self.init_done = True
+        # self.height_samples = None
+        # self.debug_viz = self.cfg.env.debug_viz
+        # self._parse_cfg(self.cfg)
+        # self._init_buffers()
+        # self._prepare_reward_function()
+
+        self._init_scene()
+        self.find_rigid_solver()
+
+        # add camera if needed
+        if self.cfg.viewer.add_camera:
+            self._setup_camera()
+
+        # self._init_terrain()
+        self._create_envs()
+        self.build()
 
     def step(self, actions):
         """Apply actions, simulate, call self.post_physics_step()
@@ -83,7 +80,6 @@ class LeggedRobot(BaseEnv, DRMixin):
     def post_physics_step(self):
         """check terminations, compute observations and rewards
         calls self._post_physics_step_callback() for common computations
-        calls self._draw_debug_vis() if needed
         """
         self.episode_length_buf += 1
         self.common_step_counter += 1
@@ -150,13 +146,14 @@ class LeggedRobot(BaseEnv, DRMixin):
 
         self._resample_commands(env_ids)
 
-        # domain randomization
-        if self.cfg.domain_rand.randomize_friction:
-            self._randomize_friction(env_ids)
-        if self.cfg.domain_rand.randomize_base_mass:
-            self._randomize_base_mass(env_ids)
-        if self.cfg.domain_rand.randomize_com_displacement:
-            self._randomize_com_displacement(env_ids)
+        if any(
+            [
+                self.cfg.domain_rand.randomize_friction,
+                self.cfg.domain_rand.randomize_base_mass,
+                self.cfg.domain_rand.randomize_com_displacement,
+            ]
+        ):
+            self.dr(env_ids)
 
         # reset buffers
         self.last_actions[env_ids] = 0.0
@@ -180,51 +177,6 @@ class LeggedRobot(BaseEnv, DRMixin):
         # send timeout info to the algorithm
         if self.cfg.env.send_timeouts:
             self.extras["time_outs"] = self.time_out_buf
-
-    def create_sim(self):
-        """Creates simulation, terrain and evironments"""
-
-        self._init_scene()
-
-        # query rigid solver
-        for solver in self.scene.sim.solvers:
-            if not isinstance(solver, RigidSolver):
-                continue
-            self.rigid_solver = solver
-
-        # add camera if needed
-        if self.cfg.viewer.add_camera:
-            self._setup_camera()
-
-        # add terrain
-        mesh_type = self.cfg.terrain.mesh_type
-        if mesh_type == "plane":
-            self.terrain = self.scene.add_entity(gs.morphs.URDF(file="urdf/plane/plane.urdf", fixed=True))
-        elif mesh_type == "heightfield":
-            self.utils_terrain = Terrain(self.cfg.terrain)
-            self._create_heightfield()
-        elif mesh_type is not None:
-            raise ValueError("Terrain mesh type not recognised. Allowed types are [None, plane, heightfield, trimesh]")
-        self.terrain.set_friction(self.cfg.terrain.friction)
-        # specify the boundary of the heightfield
-        self.terrain_x_range = torch.zeros(2, device=self.device)
-        self.terrain_y_range = torch.zeros(2, device=self.device)
-        if self.cfg.terrain.mesh_type == "heightfield":
-            self.terrain_x_range[0] = -self.cfg.terrain.border_size + 1.0  # give a small margin(1.0m)
-            self.terrain_x_range[1] = (
-                self.cfg.terrain.border_size + self.cfg.terrain.num_rows * self.cfg.terrain.terrain_length - 1.0
-            )
-            self.terrain_y_range[0] = -self.cfg.terrain.border_size + 1.0
-            self.terrain_y_range[1] = (
-                self.cfg.terrain.border_size + self.cfg.terrain.num_cols * self.cfg.terrain.terrain_width - 1.0
-            )
-        elif self.cfg.terrain.mesh_type == "plane":  # the plane used has limited size,
-            # and the origin of the world is at the center of the plane
-            self.terrain_x_range[0] = -self.cfg.terrain.plane_length / 2 + 1
-            self.terrain_x_range[1] = self.cfg.terrain.plane_length / 2 - 1
-            self.terrain_y_range[0] = -self.cfg.terrain.plane_length / 2 + 1  # the plane is a square
-            self.terrain_y_range[1] = self.cfg.terrain.plane_length / 2 - 1
-        self._create_envs()
 
     def set_camera(self, pos, lookat):
         """Set camera position and direction"""
@@ -453,29 +405,6 @@ class LeggedRobot(BaseEnv, DRMixin):
         self.robot.set_dofs_kv(self.d_gains, self.motor_dofs)
 
     def _create_envs(self):
-        """Creates environments:
-        1. loads the robot URDF/MJCF asset, create entity
-        2. Store indices of different bodies of the robot
-        """
-        asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
-        asset_root = os.path.dirname(asset_path)
-        asset_file = os.path.basename(asset_path)
-
-        self.robot = self.scene.add_entity(
-            gs.morphs.URDF(
-                file=os.path.join(asset_root, asset_file),
-                merge_fixed_links=True,  # if merge_fixed_links is True, then one link may have multiple geometries, which will cause error in set_friction_ratio
-                links_to_keep=self.cfg.asset.links_to_keep,
-                pos=np.array(self.cfg.init_state.pos),
-                quat=np.array(self.cfg.init_state.rot),
-                fixed=self.cfg.asset.fix_base_link,
-            ),
-            visualize_contact=self.debug,
-        )
-
-        # build
-        self.scene.build(n_envs=self.num_envs)
-
         self._get_env_origins()
 
         # name to indices
@@ -515,29 +444,23 @@ class LeggedRobot(BaseEnv, DRMixin):
             self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
             self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
 
-        # randomize friction
-        if self.cfg.domain_rand.randomize_friction:
-            self._randomize_friction(np.arange(self.num_envs))
-        # randomize base mass
-        if self.cfg.domain_rand.randomize_base_mass:
-            self._randomize_base_mass(np.arange(self.num_envs))
-        # randomize COM displacement
-        if self.cfg.domain_rand.randomize_com_displacement:
-            self._randomize_com_displacement(np.arange(self.num_envs))
+        if any(
+            [
+                self.cfg.domain_rand.randomize_friction,
+                self.cfg.domain_rand.randomize_base_mass,
+                self.cfg.domain_rand.randomize_com_displacement,
+            ]
+        ):
+            self.dr(np.arange(self.num_envs))
 
     def _parse_cfg(self, cfg):
-        self.dt = self.cfg.control.dt
-        if self.cfg.sim.use_implicit_controller:  # use embedded PD controller
-            self.sim_dt = self.dt
-            self.sim_substeps = self.cfg.control.decimation
-        else:  # use explicit PD controller
-            self.sim_dt = self.dt / self.cfg.control.decimation
-            self.sim_substeps = 1
         self.obs_scales = self.cfg.normalization.obs_scales
         self.reward_scales = class_to_dict(self.cfg.rewards.scales)
         self.command_ranges = class_to_dict(self.cfg.commands.ranges)
+
         if self.cfg.terrain.mesh_type not in ["heightfield"]:
             self.cfg.terrain.curriculum = False
+
         self.max_episode_length_s = self.cfg.env.episode_length_s
         self.max_episode_length = np.ceil(self.max_episode_length_s / self.dt)
 
@@ -546,20 +469,3 @@ class LeggedRobot(BaseEnv, DRMixin):
         self.dof_names = self.cfg.asset.dof_names
         self.simulate_action_latency = self.cfg.domain_rand.simulate_action_latency
         self.debug = self.cfg.env.debug
-
-    def _draw_debug_vis(self):
-        """Draws visualizations for dubugging (slows down simulation a lot).
-        Default behaviour: draws height measurement points
-        """
-        # draw height points
-        if not self.cfg.terrain.measure_heights:
-            return
-        self.scene.clear_debug_objects()
-        height_points = quat_apply_yaw(self.base_quat.repeat(1, self.num_height_points), self.height_points)
-        height_points[0, :, 0] += self.base_pos[0, 0]
-        height_points[0, :, 1] += self.base_pos[0, 1]
-        height_points[0, :, 2] = self.measured_heights[0, :]
-        # print(f"shape of height_points: ", height_points.shape) # (num_envs, num_points, 3)
-        self.scene.draw_debug_spheres(
-            height_points[0, :], radius=0.03, color=(0, 0, 1, 0.7)
-        )  # only draw for the first env
