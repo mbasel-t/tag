@@ -7,6 +7,8 @@ from tag.gym.base.env import BaseEnv
 from tag.gym.envs.domain_rand_mixin import DomainRandMixin
 from tag.gym.envs.mixins.terrain import TerrainMixin
 
+from .noise import ObservationNoise
+
 # from legged_gym import LEGGED_GYM_ROOT_DIR
 # from legged_gym.envs.base.base_task import BaseTask
 # from legged_gym.utils.gs_utils import *
@@ -293,36 +295,23 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin):
         self.robot.set_dofs_velocity(velocity=base_vel, dofs_idx_local=[0, 1, 2, 3, 4, 5], envs_idx=envs_idx)
 
     def _get_noise_scale_vec(self, cfg):
-        """Sets a vector used to scale the noise added to the observations.
-            [NOTE]: Must be adapted when changing the observations structure
-
-        Args:
-            cfg (Dict): Environment config file
-
-        Returns:
-            [torch.Tensor]: Vector of scales used to multiply a uniform distribution in [-1, 1]
-        """
-        noise_vec = torch.zeros_like(self.obs_buf[0])
-        self.add_noise = self.cfg.noise.add_noise
-        noise_scales = self.cfg.noise.noise_scales
-        noise_level = self.cfg.noise.noise_level
-        noise_vec[:3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-        noise_vec[3:6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-        noise_vec[6:9] = noise_scales.gravity * noise_level
-        noise_vec[9:12] = 0.0  # commands
-        noise_vec[12:24] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-        noise_vec[24:36] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-        noise_vec[36:48] = 0.0  # previous actions
-        if self.cfg.terrain.measure_heights:
-            noise_vec[48:235] = noise_scales.height_measurements * noise_level * self.obs_scales.height_measurements
-        return noise_vec
+        """Return the observation noise scale vector."""
+        return self.noise.scale_vec
 
     # ----------------------------------------
     def _init_buffers(self):
         """Initialize torch tensors which will contain simulation states and processed quantities"""
         self.common_step_counter = 0
         self.extras = {}
+        self.noise = ObservationNoise(
+            self.cfg.noise,
+            self.obs_scales,
+            self.num_obs,
+            self.device,
+            self.cfg.terrain.measure_heights,
+        )
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
+        self.add_noise = self.noise.add_noise
         self.forward_vec = torch.zeros((self.num_envs, 3), device=self.device, dtype=gs.tc_float)
         self.forward_vec[:, 0] = 1.0
         self.base_init_pos = torch.tensor(self.cfg.init_state.pos, device=self.device)
