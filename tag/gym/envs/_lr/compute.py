@@ -45,8 +45,7 @@ def compute_observations(self):
         self.obs_buf = torch.cat((self.obs_buf, heights), dim=-1)
 
     # add noise if needed
-    if self.add_noise:
-        self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
+    self.obs_buf = self.noise.inject(self.obs_buf)
 
     if self.num_privileged_obs is not None:
         self.privileged_obs_buf = torch.cat(
