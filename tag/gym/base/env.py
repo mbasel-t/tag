@@ -37,17 +37,28 @@ class BaseEnv:
         return self._max_steps
 
     def _init_scene(self) -> gs.Scene:
+        self.headless = not self.cfg.viewer.show_viewer
         self.scene = gs.Scene(
-            show_viewer=self.cfg.viewer.show_viewer,
-            rigid_options=gs.options.RigidOptions(
-                enable_joint_limit=self.cfg.solver.joint_limit,
-                dt=self.cfg.solver.dt,
-            ),
+            show_viewer=not self.headless,
             vis_options=gs.options.VisOptions(
                 show_world_frame=self.cfg.vis.show_world_frame,
                 n_rendered_envs=self.cfg.vis.n_rendered_envs,
             ),
+            # physics
+            sim_options=gs.options.SimOptions(dt=self.sim_dt, substeps=self.sim_substeps),
+            rigid_options=gs.options.RigidOptions(
+                enable_joint_limit=self.cfg.solver.joint_limit,
+                dt=self.cfg.solver.dt,  # TODO rename solver.dt ?
+            ),
         )
+
+    def build(self):
+        self.scene.build(
+            n_envs=self.n_envs,
+            env_spacing=self.env_spacing if self.n_rendered > 1 else [0, 0],
+        )
+        if self.cam is not None:
+            self.cam.start_recording()
 
     def step(self, actions: torch.Tensor) -> None: ...
 
@@ -70,38 +81,3 @@ class BaseEnv:
             dir.mkdir(parents=True, exist_ok=True)
             fname = dir / f'{fname if fname else "video"}.mp4'
             self.cam.stop_recording(save_to_filename=fname, fps=60)
-
-    def _init_buffers(self) -> None:
-        """Allocate common buffers used for stepping the environment."""
-        self.obs_buf = torch.zeros((self.n_envs, self.num_obs), device=self.device, dtype=gs.tc_float)
-        self.privileged_obs_buf = (
-            None
-            if self.num_privileged_obs is None
-            else torch.zeros(
-                (self.n_envs, self.num_privileged_obs),
-                device=self.device,
-                dtype=gs.tc_float,
-            )
-        )
-        self.reset_buf = torch.ones((self.n_envs,), device=self.device, dtype=gs.tc_int)
-        self.rew_buf = torch.zeros((self.n_envs,), device=self.device, dtype=gs.tc_float)
-        self.episode_length_buf = torch.zeros((self.n_envs,), device=self.device, dtype=gs.tc_int)
-
-    def _update_buffers(self) -> None:
-        """Placeholder buffer update used for testing."""
-        self.episode_length_buf += 1
-        self.obs_buf = torch.cat(
-            [
-                torch.cat(
-                    [
-                        torch.rand(4),
-                        torch.rand(4),
-                    ]
-                )
-            ]
-        )
-        self.rew_buf[:] = 0.0
-        values = [i for i in range(len(self.rew_buf))]
-        for i in range(len(values)):
-            rew = values[i]
-            self.rew_buf += rew

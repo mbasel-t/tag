@@ -50,14 +50,6 @@ class Chase(BaseEnv, TerrainEnvMixin):
 
         self._init_spaces()
 
-    def build(self):
-        self.scene.build(
-            n_envs=self.n_envs,
-            env_spacing=self.env_spacing if self.n_rendered > 1 else [0, 0],
-        )
-        if self.cam is not None:
-            self.cam.start_recording()
-
     # TODO: Implement Method - Should this method be in another class?
     def set_control_gains(self):
         pass
