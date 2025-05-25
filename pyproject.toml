@@ -25,6 +25,7 @@ dependencies = [
     "open3d>=0.19.0",
     "tensorboard>=2.19.0",
     "flax>=0.10.6",
+    "rsl-rl-lib==2.2.4",
 ]
 
 [project.optional-dependencies]
@@ -45,10 +46,7 @@ packages = ["tag"]
 
 [tool.uv.sources]
 tag = { workspace = true }
-
-# [tool.uv.sources]
-# genesis-lr = { git = "https://github.com/lupinjia/genesis_lr" }
-# rsl-rl = { git = "https://github.com/leggedrobotics/rsl_rl", rev = "v1.0.2" }
+genesis-world = { git = "https://github.com/Genesis-Embodied-AI/Genesis" }
 
 # [[tool.uv.ind}x]]
 # name = "pytorch-cu124"
