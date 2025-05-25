@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "tag"
 version = "0.1.0"
@@ -38,6 +42,9 @@ dev = [
 
 [tool.setuptools]
 packages = ["tag"]
+
+[tool.uv.sources]
+tag = { workspace = true }
 
 # [tool.uv.sources]
 # genesis-lr = { git = "https://github.com/lupinjia/genesis_lr" }
