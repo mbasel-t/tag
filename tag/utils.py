@@ -1,8 +1,18 @@
+from dataclasses import field
+
 from gymnasium import spaces
 from gymnasium.spaces import Box, Dict, Space
 import jax
 import numpy as np
 import torch
+
+
+def default(x):
+    return field(default_factory=lambda: x)
+
+
+def defaultcls(cls):
+    return field(default_factory=cls)
 
 
 def spec(tree: dict[str, np.ndarray]):

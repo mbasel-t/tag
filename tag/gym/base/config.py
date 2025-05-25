@@ -1,46 +1,60 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from enum import Enum
 
-
-def default(x):
-    return field(default_factory=lambda: x)
-
-
-def defaultcls(cls):
-    return field(default_factory=cls)
-
-
-# Environment Arguments
-
+from tag.gym.envs.mixins.terrain import Terrain
+from tag.utils import default, defaultcls
 
 # TODO: Paintable/Randomized Terrain Implementation
-@dataclass
-class Terrain:
-    mesh_type: str = "plane"
-    friction: float = 1.0
-    restitution: float = 1.0
-    randomize_friction: bool = False  # DR - Terrain Friction
-    friction_range: list[float] = default([0.5, 1.25])
-    push_robots: bool = False  # DR - Randomized Robot Displacement
-    push_interval_s: int = 15
-    max_push_vel_xy: float = 1.0
 
 
 @dataclass
 class Viewer:
-    show_viewer: bool = False
+    """controls viewer settings"""
+
+    headless: bool = True  # show to display? y/n
+
+    @property
+    def show_viewer(self):
+        return not self.headless
+
+    @property
+    def gui(self):
+        return not self.headless
+
+
+class Resolution(Enum):
+    """camera resolution"""
+
+    K4 = (3840, 2160)
+    # QHD = (2560, 1440)
+    HD = (1920, 1080)
+    # FHD = (1440, 1080)
+    P720 = (1280, 720)
+    P480 = (640, 480)
+    P240 = (426, 240)
+    P144 = (256, 144)
 
 
 @dataclass
 class Vis:
-    visualized: bool = True
+    """controls visual observations"""
+
+    visualized: bool = True  # TODO need better name
+
+    # TODO these should be in viewer
+    # TODO rename this class Camera?
     show_world_frame: bool = True
     n_rendered_envs: int = 1
     env_spacing: list[float] = default([2.5, 2.5])
 
-    def __post_init__(self):
-        pass
-        # if self.n_rendered_envs == 1:
-        # self.env_spacing = [0.0, 0.0]
+    resolution: Resolution = Resolution.P480  # camera resolution
+    pos: list[float] = default([10.0, 0.0, 6.0])  # camera position
+    lookat: list[float] = default([11.0, 5.0, 3.0])  # camera lookat position
+    fov: float = 40.0  # field of view
+
+    @property
+    def res(self):
+        return self.resolution.value
 
 
 @dataclass
@@ -54,6 +68,7 @@ class Solver:
 class Sim:
     dt: int = 0.01  # 100hz sim step physics
     num_envs: int = 1
+    substeps: int = 1
 
 
 @dataclass
@@ -105,7 +120,7 @@ class Control:
 
 @dataclass
 class Asset:
-    file: str = default("DO NOT REMOVE PLEASE")
+    file: str
     local_dofs: list[int] = default([1, 2, 3])
 
 
@@ -114,7 +129,7 @@ class RobotConfig:
     init_state: InitState = defaultcls(InitState)
     state: State = default(State())
     control: Control = default(Control())
-    asset: Asset = default(Asset())
+    asset: Asset = defaultcls(Asset)
 
 
 # Environment Config Class
