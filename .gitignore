@@ -1,3 +1,5 @@
+logs/
+*.pt
 *.html
 *.mp4
 
