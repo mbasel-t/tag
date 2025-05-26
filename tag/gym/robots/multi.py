@@ -17,12 +17,12 @@ class MultiRobot(Robot):
         # FEATURE: Need settings for distance apart, where to spawn, etc.
         # NOTE(dle): Need to add something to define the distance between them properly
 
-        init_pos_map = tile_xyz(n, cfg.init_state.pos[2])
+        init_pos_map = tile_xyz(n, cfg.state.pos[2])
 
         self.robots = {}
         for i in range(n):
             _cfg = deepcopy(cfg)
-            _cfg.init_state.pos = init_pos_map[i]
+            _cfg.state.pos = init_pos_map[i]
 
             ### NOTE(dle): Placeholder Color System
             # NOTE(dle): Spaces Temp Fix
