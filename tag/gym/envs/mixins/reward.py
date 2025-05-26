@@ -3,32 +3,35 @@ from dataclasses import asdict, dataclass
 import genesis as gs
 import torch
 
-from tag.gym.base.config import defaultcls
+from tag.utils import defaultcls
 
 
 @dataclass
 class RewardScales:
     # limitation
-    dof_pos_limits: float = -10.0
-    collision: float = -1.0
+    dof_pos_limits: float = -10.0  # TODO add support
+    # collision: float = -1.0 # TODO add support
+    termination: float = -1e-1
 
     # command tracking
-    tracking_lin_vel: float = 1.0
+    tracking_lin_vel: float = 5.0
     tracking_ang_vel: float = 0.5
 
     # smooth
     lin_vel_z: float = -2.0
-    base_height: float = -1.0
     ang_vel_xy: float = -0.05
-    orientation: float = -1.0
+    orientation: float = -0.0
+    # torques: float = -2.0e-4 # TODO add support
     dof_vel: float = -5.0e-4
     dof_acc: float = -2.0e-7
+    base_height: float = -1.0
     action_rate: float = -0.01
-    torques: float = -2.0e-4
 
     # gait
-    feet_air_time: float = 1.0
-    # similar_to_default: float = -0.05
+    feet_air_time: float = 3.0
+    feet_stumble = -0.0
+    stand_still = -0.0
+    similar_to_default: float = -0.05
 
 
 @dataclass
@@ -38,10 +41,19 @@ class RewardConfig:
 
 @dataclass
 class DenseReward(RewardConfig):
+    only_positive_rewards: bool = False  # True  # clip 0,inf
+
     soft_dof_pos_limit: float = 0.9
+    soft_dof_vel_limit: float = 1.0
+    soft_torque_limit: float = 1.0
+
     base_height_target: float = 0.36
     # feet_height_target: float = 0.075
-    tracking_sigma: float = 0.25
+    tracking_sigma: float = 0.25  # tracking reward = exp(-error^2/sigma)
+
+    termination_if_roll_greater_than: float = 0.8
+    termination_if_pitch_greater_than: float = 0.8
+    termination_if_height_lower_than: float = 0.2
 
     scales: RewardScales = defaultcls(RewardScales)
 
@@ -56,15 +68,16 @@ class SparseReward(RewardConfig):
     pass
 
 
+def _float(shape):
+    return torch.zeros(shape, device=gs.device, dtype=gs.tc_float)
+
+
 class RewardMixin:
-    def _float(shape):
-        return torch.zeros(shape, device=gs.device, dtype=gs.tc_float)
-
     def _init_reward(self):
-        assert getattr(self, "R", None) is not None, "Reward config not set"
-        assert isinstance(self.R, RewardConfig), "Reward config not set *properly*"
+        assert getattr(self.cfg, "rewards", None) is not None, "Reward config not set"
+        assert isinstance(self.cfg.rewards, RewardConfig), "Reward config not set *properly*"
 
-        scales = asdict(self.R.scale)
+        scales = asdict(self.cfg.rewards.scales)
         # remove zero scales + multiply non-zero ones by self.dt
         self.reward_scales = {k: scale * self.dt for k, scale in scales.items() if scale != 0}
         self.reward_functions = {k: getattr(self, f"_reward_{k}") for k in self.reward_scales.keys()}
@@ -72,7 +85,31 @@ class RewardMixin:
 
         self.rew_buf = _float((self.n_envs,))
 
+    def compute_reward(self):
+        """Compute rewards
+        Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
+        adds each terms to the episode sums and to the total reward
+        """
+        self.rew_buf[:] = 0.0
+        for name, fn in self.reward_functions.items():
+            rew = fn() * self.reward_scales[name]
+
+            self.rew_buf += rew
+            self.episode_sums[name] += rew
+
+        if self.cfg.rewards.only_positive_rewards:
+            self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.0)
+
+        # add termination reward after clipping
+        if "termination" in self.reward_scales:
+            rew = self._reward_termination() * self.reward_scales["termination"]
+            self.rew_buf += rew
+            self.episode_sums["termination"] += rew
+
+    #
     # ------------ reward functions----------------
+    #
+
     def _reward_lin_vel_z(self):
         # Penalize z axis base linear velocity
         return torch.square(self.base_lin_vel[:, 2])
@@ -87,13 +124,14 @@ class RewardMixin:
 
     def _reward_base_height(self):
         # Penalize base height away from target
+        tgt = self.cfg.rewards.base_height_target
         if getattr(self, "measured_heights", None) is not None:
             base_height = torch.mean(self.base_pos[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-            rew = torch.square(base_height - self.cfg.rewards.base_height_target)
+            rew = torch.square(base_height - tgt)
             return rew
 
         # no terrain
-        return torch.square(self.base_pos[:, 2] - self.rewards.base_height_target)
+        return torch.square(self.base_pos[:, 2] - tgt)
 
     def _reward_torques(self):
         # Penalize torques
@@ -120,7 +158,8 @@ class RewardMixin:
 
     def _reward_termination(self):
         # Terminal reward / penalty
-        return self.reset_buf * ~self.time_out_buf
+        # episode ended but not truncated
+        return self.reset_buf * ~self.checks["truncate"]
 
     def _reward_dof_pos_limits(self):
         # Penalize dof positions too close to the limit
