@@ -24,93 +24,54 @@ uv run main.py
 
 ```mermaid
 classDiagram
-    direction TD
-
-    class BaseEnv {
-        +cfg: EnvConfig
-        +scene: gs.Scene
-        +max_episode_length: int
-        +build()
-        +reset()
-        +step()
-        +get_observations()
-        +get_privileged_observations()
-    }
-
-    class Robot {
-        +robot: gs.Entity
-        +scene: gs.Scene
-        +reset()
-        +act(act, mode="control")
-        +close()
-        +open()
-    }
-
-    class CameraManager {
-        +cams: Dict[str, gs.Camera]
-        +render(names)
-    }
-
-    class RobotEnv {
-        +cams: Dict[str, gs.Camera]
-        +render(names)
-    }
-
-    BaseEnv <|.. RobotEnv
-    CameraManager <|.. RobotEnv
-
-    class FrankaEnv
-    FrankaEnv --|> RobotEnv
-    FrankaEnv ..> Franka : uses
-
-    class XArm7Env
-    XArm7Env --|> RobotEnv
-    XArm7Env ..> XArm7 : uses
-
-    class Franka
-    Franka ..|> Robot
-
-    class XArm7
-    XArm7 ..|> Robot
-```
-
-## Policy and Environment Wrappers
-
-```mermaid
-classDiagram
     class Policy {
-        +observe(env: EnvWrapper1)
+        +observe(env: NoiseInjectWrapper)
         +act(): Action
         +train(data): void
     }
 
-    class EnvWrapper1 {
-        -env: EnvWrapper2
+    class NoiseInjectWrapper {
+        -env: SpaceClipWrapper
         -buffer: Buffer
         +step(action): Observation
         +reset(): Observation
     }
 
-    class EnvWrapper2 {
-        -env: Env
+    class SpaceClipWrapper {
+        -env: TaskEnv
         +step(action): Observation
         +reset(): Observation
     }
 
-    class Env {
-        +Robot[] robots
-        +Terrain terrain
-        +ObstacleTree obstacle_tree
+    class BaseEnv
+
+    class WorldEnv {
+        +CameraMixin
+        +TerrainMixin
     }
+
+    class RobotEnv {
+        +Robot[] robots
+    }
+
+    class TaskEnv {
+        +RewardMixin
+        +Terminator terminator
+    }
+
+    class CameraMixin
+    class TerrainMixin
+    class RewardMixin
+    class Terminator
 
     class Buffer {
         +store(obs, action, reward)
         +sample(): Batch
     }
 
-    class Robot
-
-    class Terrain
+    class Robot {
+        +state
+    }
 
     class ObstacleTree {
         +Obstacle[] obstacles
@@ -118,15 +79,41 @@ classDiagram
 
     class Obstacle
 
-    Policy --> EnvWrapper1 : interacts with
-    EnvWrapper1 --> Policy : receives actions from
-    EnvWrapper1 --> EnvWrapper2 : wraps
-    EnvWrapper1 --> Buffer : logs to
-    EnvWrapper2 --> Env : wraps
-    Env --> Robot
-    Env --> Terrain
-    Env --> ObstacleTree
-    ObstacleTree --> Obstacle
+    %% Inheritance
+
+    Walk --|> TaskEnv
+    Chase --|> TaskEnv
+    Mutual --|> TaskEnv
+
+    TaskEnv --|> RobotEnv
+    RobotEnv --|> WorldEnv
+    WorldEnv --|> BaseEnv
+
+    MultiRobot --|> Robot : is/has
+    MobileRobot --|> Robot
+    Go2 --|> MobileRobot
+    JoyGoy2 ..> Go2 : wraps
+
+    %% Relationships
+    Policy --> NoiseInjectWrapper : observes
+    NoiseInjectWrapper --> Policy : acted on
+    NoiseInjectWrapper --> Buffer : logs to
+    NoiseInjectWrapper ..> SpaceClipWrapper : wraps
+    SpaceClipWrapper ..> LatencyWrapper : wraps
+    LatencyWrapper ..> PDSubStepWrapper : wraps
+    PDSubStepWrapper ..> TaskEnv : wraps
+
+    WorldEnv ..> CameraMixin : mixed
+    WorldEnv ..> TerrainMixin : mixed
+    WorldEnv ..> DomainRandMixin : mixed / randomized by
+    TerrainMixin --o ObstacleTree
+    ObstacleTree --o Obstacle
+
+    TaskEnv --o Terminator : term checked by
+    TaskEnv ..> RewardMixin : mixed / computed by
+    RobotEnv --* Robot : has
+
+
     Policy --> Buffer : stores to
     Buffer --> Policy : trains
 ```
