@@ -1,16 +1,8 @@
 from dataclasses import dataclass
 
-from tag.gym.base.config import (
-    EnvConfig,
-    Sim,
-    Solver,
-    Task,
-    Terrain,
-    Viewer,
-    Vis,
-    default,
-)
+from tag.gym.base.config import EnvConfig, Sim, Solver, Task, Terrain, Viewer, Vis
 from tag.gym.robots.go2 import Go2Config
+from tag.utils import default, defaultcls
 
 
 @dataclass
@@ -20,7 +12,7 @@ class Go2EnvConfig(EnvConfig):
     vis: Vis = default(Vis())
     solver: Solver = default(Solver())
     sim: Sim = default(Sim())
-    robot: Go2Config = default(Go2Config())
+    robot: Go2Config = defaultcls(Go2Config)
     n_robots: int = 1
 
 

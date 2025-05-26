@@ -6,6 +6,7 @@ from gymnasium.spaces import Dict
 import torch
 
 from tag.gym.base.env import BaseEnv
+from tag.gym.envs.mixins.cam import CameraMixin
 from tag.gym.envs.terrain_mixin import TerrainEnvMixin
 from tag.gym.robots.multi import MultiRobot
 from tag.gym.terrain.terrain import Terrain
@@ -14,7 +15,7 @@ from .chase_config import ChaseEnvConfig
 from .utils import create_camera
 
 
-class Chase(BaseEnv, TerrainEnvMixin):
+class Chase(BaseEnv, TerrainEnvMixin, CameraMixin):
     """Simple two-robot chase environment."""
 
     def __init__(self, cfg: ChaseEnvConfig):
