@@ -1,27 +1,26 @@
 import genesis as gs
 from genesis.utils.geom import inv_quat, transform_by_quat
 import numpy as np
+from rich.pretty import pprint
 import torch
 
 from tag.gym.base.env import BaseEnv
 from tag.gym.envs.mixins.cam import CameraMixin
 from tag.gym.envs.mixins.dr import DomainRandMixin
 from tag.gym.envs.mixins.terrain import TerrainMixin
+from tag.gym.robots.go2 import Go2Robot
 
 from .noise import ObservationNoise
 
-# from legged_gym import LEGGED_GYM_ROOT_DIR
-# from legged_gym.envs.base.base_task import BaseTask
 # from legged_gym.utils.gs_utils import *
-# from legged_gym.utils.helpers import class_to_dict
 # from legged_gym.utils.math import quat_apply_yaw, wrap_to_pi
 # from legged_gym.utils.terrain import Terrain
-# from .legged_robot_config import LeggedRobotCfg
 
 
 class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin, CameraMixin):
     def __init__(self, cfg):
-        super().__init__(self.cfg)
+        assert cfg.n_robots == 1, "Only one robot supported for now."
+        super().__init__(cfg)
         self.cfg = cfg
 
         # self.height_samples = None
@@ -34,11 +33,19 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin, CameraMixin):
         self.find_rigid_solver()
 
         # add camera if needed
-        if self.cfg.viewer.add_camera:
+        if self.cfg.vis.visualized:
             self._setup_camera()
 
+        self.robot = Go2Robot(
+            self.scene,
+            self.cfg.robot,
+            self.n_envs,
+        )
+
         # self._init_terrain()
-        self._create_envs()
+        self._get_env_origins()
+        self._init_robot_param()
+        self.dr(np.arange(self.num_envs))
         self.build()
 
     def step(self, actions):
@@ -129,14 +136,7 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin, CameraMixin):
 
         self._resample_commands(env_ids)
 
-        if any(
-            [
-                self.cfg.domain_rand.randomize_friction,
-                self.cfg.domain_rand.randomize_base_mass,
-                self.cfg.domain_rand.randomize_com_displacement,
-            ]
-        ):
-            self.dr(env_ids)
+        self.dr(env_ids)
 
         # reset buffers
         self.last_actions[env_ids] = 0.0
@@ -179,7 +179,9 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin, CameraMixin):
         dof_pos = self.robot.get_dofs_position(self.motor_dofs)
         dof_vel = self.robot.get_dofs_velocity(self.motor_dofs)
         link_contact_forces = torch.tensor(
-            self.robot.get_links_net_contact_force(), device=self.device, dtype=gs.tc_float
+            self.robot.get_links_net_contact_force(),
+            device=self.device,
+            dtype=gs.tc_float,
         )
 
         self.base_pos[:] = base_pos
@@ -412,54 +414,32 @@ class LeggedRobot(BaseEnv, DomainRandMixin, TerrainMixin, CameraMixin):
         self._init_contact_buffers()
         self._init_pd_gains()
 
-    def _create_envs(self):
-        self._get_env_origins()
+    def _init_robot_param(self):
+        self.motor_dofs = self.robot.dofs  # name to indices
 
-        # name to indices
-        self.motor_dofs = [self.robot.get_joint(name).dof_idx_local for name in self.dof_names]
+        idxs = self.robot.indecies
+        print(self.robot.link_names)
+        pprint(idxs)
 
-        # find link indices, termination links, penalized links, and feet
-        def find_link_indices(names):
-            link_indices = list()
-            for link in self.robot.links:
-                flag = False
-                for name in names:
-                    if name in link.name:
-                        flag = True
-                if flag:
-                    link_indices.append(link.idx - self.robot.link_start)
-            return link_indices
+        self.termination_indices = idxs["terminate"]
+        self.penalized_indices = idxs["penalize"]
+        self.feet_indices = idxs["feet"]
 
-        self.termination_indices = find_link_indices(self.cfg.asset.terminate_after_contacts_on)
-        all_link_names = [link.name for link in self.robot.links]
-        print(f"all link names: {all_link_names}")
-        print("termination link indices:", self.termination_indices)
-        self.penalized_indices = find_link_indices(self.cfg.asset.penalize_contacts_on)
-        print(f"penalized link indices: {self.penalized_indices}")
-        self.feet_indices = find_link_indices(self.cfg.asset.foot_name)
-        print(f"feet link indices: {self.feet_indices}")
         assert len(self.termination_indices) > 0
         assert len(self.feet_indices) > 0
+
+        # NOTE(mhyatt) can we remove unused ?
         self.feet_link_indices_world_frame = [i + 1 for i in self.feet_indices]
 
-        # dof position limits
-        self.dof_pos_limits = torch.stack(self.robot.get_dofs_limit(self.motor_dofs), dim=1)
-        self.torque_limits = self.robot.get_dofs_force_range(self.motor_dofs)[1]
+        self.dof_pos_limits = self.robot.pos_limits
+        self.torque_limits = self.robot.torque_limits
+
         for i in range(self.dof_pos_limits.shape[0]):
             # soft limits
             m = (self.dof_pos_limits[i, 0] + self.dof_pos_limits[i, 1]) / 2
             r = self.dof_pos_limits[i, 1] - self.dof_pos_limits[i, 0]
             self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
             self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
-
-        if any(
-            [
-                self.cfg.domain_rand.randomize_friction,
-                self.cfg.domain_rand.randomize_base_mass,
-                self.cfg.domain_rand.randomize_com_displacement,
-            ]
-        ):
-            self.dr(np.arange(self.num_envs))
 
     def _parse_cfg(self, cfg):
         self.obs_scales = self.cfg.normalization.obs_scales
