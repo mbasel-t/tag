@@ -21,26 +21,24 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
         cfg,
         env_cfg,
         obs_cfg,
-        reward_cfg,
         command_cfg,
     ):
         super().__init__(cfg)
         self.num_envs = self.n_envs  # for rsl rl # TODO make some env conversion
         self.auto_reset = cfg.auto_reset
 
-        self.num_obs = obs_cfg["num_obs"]
+        self.num_obs = 48
         self.num_privileged_obs = None
         self.num_actions = env_cfg["num_actions"]
         self.num_commands = command_cfg["num_commands"]
         self.device = gs.device
 
         self.simulate_action_latency = True  # there is a 1 step latency on real robot
-        self.dt = 0.02  # control frequency on real robot is 50hz
+        self.dt = self.cfg.sim.dt
         self.max_episode_length = math.ceil(env_cfg["episode_length_s"] / self.dt)
 
         self.env_cfg = env_cfg
         self.obs_cfg = obs_cfg
-        self.reward_cfg = reward_cfg
         self.command_cfg = command_cfg
 
         self.obs_scales = obs_cfg["obs_scales"]
@@ -51,8 +49,8 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
         self.scene.add_entity(gs.morphs.URDF(file="urdf/plane/plane.urdf", fixed=True))
 
         # add robot
-        self.base_init_pos = torch.tensor(self.env_cfg["base_init_pos"], device=gs.device)
-        self.base_init_quat = torch.tensor(self.env_cfg["base_init_quat"], device=gs.device)
+        self.base_init_pos = torch.tensor(self.cfg.robot.state.pos, device=gs.device)
+        self.base_init_quat = torch.tensor(self.cfg.robot.state.quat, device=gs.device)
         self.inv_base_init_quat = inv_quat(self.base_init_quat)
 
         pprint(self.base_init_pos.shape)
@@ -62,6 +60,11 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
             self.cfg.robot,
             self.n_envs,
         )
+        self.feet_indices = self.robot.feet
+
+        self.cfg.rewards = WalkReward()
+        pprint(self.cfg.rewards)
+        self._init_reward()
 
         self.build()
         self.set_camera(lookat=(0, 0, 0))
@@ -70,9 +73,8 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
         self.robot.robot.set_dofs_kp([self.env_cfg["kp"]] * self.num_actions, self.robot.dofs)
         self.robot.robot.set_dofs_kv([self.env_cfg["kd"]] * self.num_actions, self.robot.dofs)
 
-        self.cfg.rewards = WalkReward()
-        self._init_reward()
         self._init_buffers()
+        self._init_robot_param()
 
     def _resample_commands(self, envs_idx):
         self.commands[envs_idx, 0] = gs_rand_float(*self.command_cfg["lin_vel_x_range"], (len(envs_idx),), gs.device)
@@ -97,14 +99,17 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
                 self.base_quat,
             ),
             rpy=True,
-            degrees=True,
+            degrees=False,
         )
+
         inv_base_quat = inv_quat(self.base_quat)
         self.base_lin_vel[:] = transform_by_quat(self.robot.robot.get_vel(), inv_base_quat)
         self.base_ang_vel[:] = transform_by_quat(self.robot.robot.get_ang(), inv_base_quat)
         self.projected_gravity = transform_by_quat(self.global_gravity, inv_base_quat)
         self.dof_pos[:] = self.robot.robot.get_dofs_position(self.robot.dofs)
         self.dof_vel[:] = self.robot.robot.get_dofs_velocity(self.robot.dofs)
+
+        self.link_contact_forces = self.robot.contact_forces
 
         # resample commands
         envs_idx = (
@@ -115,18 +120,14 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
         self._resample_commands(envs_idx)
 
         # check termination and reset
-        self.reset_buf = {
+        self.checks = {
             "truncate": self.episode_length_buf > self.max_episode_length,
-            "pitch": torch.abs(self.base_euler[:, 1]) > self.env_cfg["termination_if_pitch_greater_than"],
-            "roll": torch.abs(self.base_euler[:, 0]) > self.env_cfg["termination_if_roll_greater_than"],
+            "pitch": torch.abs(self.base_euler[:, 1]) > self.cfg.rewards.termination_if_pitch_greater_than,
+            "roll": torch.abs(self.base_euler[:, 0]) > self.cfg.rewards.termination_if_roll_greater_than,
+            "height": self.base_pos[:, 2] < self.cfg.rewards.termination_if_height_lower_than,
         }
-        self.reset_buf = self.reset_buf["truncate"] | self.reset_buf["pitch"] | self.reset_buf["roll"]
-
-        pprint({"n_reset": self.reset_buf})
-
-        # self.reset_buf = self.episode_length_buf > self.max_episode_length
-        # self.reset_buf |= torch.abs(self.base_euler[:, 1]) > self.env_cfg["termination_if_pitch_greater_than"]
-        # self.reset_buf |= torch.abs(self.base_euler[:, 0]) > self.env_cfg["termination_if_roll_greater_than"]
+        # pprint({k: v.sum().item() for k, v in self.checks.items()})
+        self.reset_buf = self.checks["truncate"] | self.checks["pitch"] | self.checks["roll"] | self.checks["height"]
 
         time_out_idx = (self.episode_length_buf > self.max_episode_length).nonzero(as_tuple=False).flatten()
         self.extras["time_outs"] = torch.zeros_like(self.reset_buf, device=gs.device, dtype=gs.tc_float)
@@ -135,13 +136,7 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
         if self.auto_reset:
             self.reset_idx(self.reset_buf.nonzero(as_tuple=False).flatten())
 
-        # compute reward
-        self.rew_buf[:] = 0.0
-        for name, reward_func in self.reward_functions.items():
-            rew = reward_func() * self.reward_scales[name]
-            self.rew_buf += rew
-            self.episode_sums[name] += rew
-
+        self.compute_reward()
         self.render()
 
         # scales = self.obs_scales | {"cmd": self.commands_scale}
@@ -152,12 +147,13 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
         # compute observations
         self.obs_buf = torch.cat(
             [
+                self.base_lin_vel * self.obs_scales["lin_vel"],  # 3
                 self.base_ang_vel * self.obs_scales["ang_vel"],  # 3
                 self.projected_gravity,  # 3
                 self.commands * self.commands_scale,  # 3
                 (self.dof_pos - self.default_dof_pos) * self.obs_scales["dof_pos"],  # 12
                 self.dof_vel * self.obs_scales["dof_vel"],  # 12
-                self.actions,  # 12
+                self.actions * self.env_cfg["action_scale"],  # 12
             ],
             axis=-1,
         )
@@ -168,13 +164,11 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
         self.extras["observations"]["critic"] = self.obs_buf
 
         # pprint({'rew': self.rew_buf, 'reset': self.reset_buf})
-        return self.obs_buf, None, self.rew_buf, self.reset_buf, self.extras
-        return self.obs_buf, self.rew_buf, self.reset_buf, self.extras  # v2.2.4
+        return self.obs_buf, self.rew_buf, self.reset_buf, self.extras
 
     def get_observations(self):
-        # NOTE(mhyatt) not needed for rsl-rl v1.0.2
-        # self.extras["observations"]["critic"] = self.obs_buf
-        return self.obs_buf  # , self.extras
+        self.extras["observations"]["critic"] = self.obs_buf
+        return self.obs_buf, self.extras
 
     def get_privileged_observations(self):
         return None
@@ -226,6 +220,30 @@ class Walk(BaseEnv, CameraMixin, RewardMixin):
     #
     #
     #
+
+    def _init_robot_param(self):
+        self.idxs = self.robot.indices
+        print(self.robot.link_names)
+        pprint(self.idxs)
+
+        assert len(self.idxs["terminate"]) > 0
+        assert len(self.idxs["feet"]) > 0
+
+        # NOTE(mhyatt) can we remove unused ?
+        # self.feet_link_indices_world_frame = [i + 1 for i in self.feet_indices]
+
+        soft = self.cfg.rewards.soft_dof_pos_limit
+        self.dof_pos_limits = self.robot.pos_limits(soft=soft)
+        self.torque_limits = self.robot.torque_limits()
+
+        # contact gait
+        self.last_contacts = torch.zeros((self.num_envs, len(self.idxs["feet"])), device=self.device, dtype=gs.tc_int)
+        self.link_contact_forces = self.robot.contact_forces
+        self.feet_air_time = torch.zeros(
+            (self.num_envs, len(self.idxs["feet"])),
+            device=self.device,
+            dtype=gs.tc_float,
+        )
 
     def _init_buffers(self):
         def _float(shape):
