@@ -22,6 +22,7 @@ class BaseEnv:
         self.n_envs = cfg.sim.num_envs
         self.n_rendered = cfg.vis.n_rendered_envs
         self.env_spacing = cfg.vis.env_spacing
+        self.cam = None
 
         # TODO task not defined
         # task_cfg = getattr(cfg, "task", Task())
@@ -50,6 +51,9 @@ class BaseEnv:
                 dt=self.cfg.solver.dt,  # TODO rename solver.dt to control.dt ?
             ),
         )
+        self.plane = self.scene.add_entity(
+            gs.morphs.Plane(),  # Default Plane
+        )
 
     def build(self):
         self.scene.build(
@@ -57,7 +61,7 @@ class BaseEnv:
             env_spacing=self.env_spacing if self.n_rendered > 1 else [0, 0],
         )
         if self.cam is not None:
-            self.cam.start_recording()
+            self.cam.start_recording()  # TODO move to the camera mixin
 
     def step(self, actions: torch.Tensor) -> None: ...
 
@@ -75,6 +79,10 @@ class BaseEnv:
 
     def record_visualization(self, fname: str = None) -> None:
         """Finalize and save camera recordings, if any."""
+        if self.cam is None:
+            print("cam is None")
+            return
+
         if getattr(self.cfg.vis, "visualized", False) and hasattr(self, "cam"):
             dir = BASE / "mp4"
             dir.mkdir(parents=True, exist_ok=True)
