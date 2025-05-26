@@ -85,17 +85,13 @@ class Task:
 
 @dataclass
 class InitState:
-    # default_joint_angles: dict[str, float] # = default({"joint", 1.0})  # default pose
+    joints: dict[str, float]  # default pose
 
     pos: list[float] = default([0.0, 0.0, 1.0])  # spawn position
     quat: list[float] = default([1.0, 0.0, 0.0, 0.0])  # spawn orientation
 
-    randomize_angle: bool = False  # DR - Initial Angle Spawn
-    angle_range: list[float] = default([0.0, 0.0])  # min/max angle randomization
-    randomize_com_displacement: bool = False  # DR - Center of Mass
-    com_displacement_range: list[float] = default([-0.01, 0.01])  # min/max com displacement
-    randomize_mass: bool = False  # DR - Mass Range
-    mass_range: list[float] = default([-0.1, 0.1])
+    # randomize_angle: bool = False  # DR - Initial Angle Spawn
+    # angle_range: list[float] = default([0.0, 0.0])  # min/max angle randomization
 
     # TODO(dle) random stiffness dampening
 
@@ -118,15 +114,46 @@ class Control:
     latency: bool = False
 
 
+import genesis as gs
+
+
 @dataclass
 class Asset:
     file: str
-    local_dofs: list[int] = default([1, 2, 3])
+    local_dofs: list[int]
+
+    pos: list[float] = default([0.0, 0.0, 0.0])
+    color: list[float] | None = None
+
+    def create(self, scene):
+        return scene.add_entity(
+            self._morph(
+                file=self.file,
+                pos=self.pos,
+            ),
+            surface=gs.surfaces.Default(color=self.color),
+        )
+
+
+class URDF(Asset):
+    pass
+
+    @property
+    def _morph(self):
+        return gs.morphs.URDF
+
+
+class MJCF(Asset):
+    pass
+
+    @property
+    def _morph(self):
+        return gs.morphs.MJCF
 
 
 @dataclass
 class RobotConfig:
-    init_state: InitState = defaultcls(InitState)
+    state: InitState = defaultcls(InitState)
     state: State = default(State())
     control: Control = default(Control())
     asset: Asset = defaultcls(Asset)
