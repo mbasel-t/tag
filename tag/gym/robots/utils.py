@@ -1,17 +1,17 @@
 import numpy as np
 
 
-def tile_xyz(n, z, spacing=1.0):
-    side = int(np.ceil(np.sqrt(n)))  # number of tiles per row/column
-    coords = []
+def tile_xyz(n, z, spacing=1.0, device=None, dtype=None):
+    side = int(np.ceil(np.sqrt(n)))
 
-    offset = spacing * (side - 1) / 2.0  # to center grid at (0,0)
+    # Compute grid indices
+    idx = np.arange(n)
+    row = idx // side
+    col = idx % side
 
-    for i in range(n):
-        row = i // side
-        col = i % side
-        x = (row * spacing) - offset
-        y = (col * spacing) - offset
-        coords.append([x, y, z])
+    offset = spacing * (side - 1) / 2.0
+    x = (row * spacing) - offset
+    y = (col * spacing) - offset
+    z = np.full_like(x, z)
 
-    return np.array(coords)
+    return np.stack([x, y, z], axis=1)  # shape (n, 3)

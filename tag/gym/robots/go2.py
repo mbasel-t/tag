@@ -1,65 +1,85 @@
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict
 
 import genesis as gs
+from genesis.engine.entities.rigid_entity import RigidEntity
 from genesis.utils.geom import inv_quat, quat_to_xyz, transform_by_quat, transform_quat_by_quat
 from gymnasium import spaces
+import jax
 import numpy as np
 import torch
 
-from tag.gym.base.config import MJCF, URDF, Control, InitState, RobotConfig, default
-from tag.gym.robots.robot import Robot
-from tag.names import BASE, MENAGERIE
+from tag.gym.base.config import MJCF, URDF, Control
+from tag.names import MENAGERIE
+from tag.utils import default
+
+from .robot import Robot, RobotConfig, RobotState
 
 local_dofs = [6, 8, 7, 9, 10, 12, 11, 13, 14, 16, 15, 17]
-GO2MJCF = MJCF(file=str(MENAGERIE / "unitree_go2" / "go2.xml"), local_dofs=local_dofs)
-GO2URDF = URDF(file=str(BASE / "other/resources/go2/urdf" / "go2.urdf"), local_dofs=local_dofs)
+GO2MJCF = MJCF(file=str(MENAGERIE / "unitree_go2" / "go2.xml"))
+GO2URDF = URDF(file="urdf/go2/urdf/go2.urdf")  # Genesis/resources
+
+GO2_STAND_JOINTS = {
+    "FL_hip_joint": 0.0,
+    "FR_hip_joint": 0.0,
+    "RL_hip_joint": 0.0,
+    "RR_hip_joint": 0.0,
+    "FL_thigh_joint": 0.8,
+    "FR_thigh_joint": 0.8,
+    "RL_thigh_joint": 1.0,
+    "RR_thigh_joint": 1.0,
+    "FL_calf_joint": -1.5,
+    "FR_calf_joint": -1.5,
+    "RL_calf_joint": -1.5,
+    "RR_calf_joint": -1.5,
+}
+GO2_CROUCH_JOINTS = {
+    "FL_hip_joint": 0.1,
+    "RL_hip_joint": 0.1,
+    "FR_hip_joint": -0.1,
+    "RR_hip_joint": -0.1,
+    "FL_thigh_joint": 0.8,
+    "RL_thigh_joint": 1.0,
+    "FR_thigh_joint": 0.8,
+    "RR_thigh_joint": 1.0,
+    "FL_calf_joint": -1.5,
+    "RL_calf_joint": -1.5,
+    "FR_calf_joint": -1.5,
+    "RR_calf_joint": -1.5,
+}
 
 
 @dataclass
-class State:
-    pass
+class Go2State(RobotState):
+    joints: Dict[str, float] = default(GO2_STAND_JOINTS)
+
+    # link_pos: torch.Tensor
+    # link_quat: torch.Tensor
+    # link_vel: torch.Tensor
+    # link_links_ang: torch.Tensor
 
 
 @dataclass
-class RobotState(State):
-    pass
-
-
-@dataclass
-class Go2RobotState(RobotState):
-    base_pos: torch.Tensor
-    base_quat: torch.Tensor
-    base_velo: torch.Tensor
-    base_ang: torch.Tensor
-
-    link_pos: torch.Tensor
-    link_quat: torch.Tensor
-    link_vel: torch.Tensor
-    link_links_ang: torch.Tensor
+class PDControl:
+    # PD Drive parameters:
+    # control_type = 'P'
+    stiffness = {"joint": 20.0}  # [N*m/rad]
+    damping = {"joint": 0.5}  # [N*m*s/rad]
+    #  target angle = actionScale * action + defaultAngle
+    action_scale = 0.25
+    # control frequency 50Hz     ■ E222 multiple spaces after operator
+    dt = 0.02
+    #  Number of control action updates @ sim DT per policy DT
+    decimation = 4
 
 
 @dataclass
 class Go2Config(RobotConfig):
-    control: Control = default(Control(kp=40.0, kd=2.0))
+    control: Control = default(Control(kp=20.0, kd=0.5))
     asset: MJCF | URDF = default(GO2URDF)
 
-    state: InitState = default(
-        InitState(
-            joints={
-                "FL_hip_joint": 0.1,
-                "RL_hip_joint": 0.1,
-                "FR_hip_joint": -0.1,
-                "RR_hip_joint": -0.1,
-                "FL_thigh_joint": 0.8,
-                "RL_thigh_joint": 1.0,
-                "FR_thigh_joint": 0.8,
-                "RR_thigh_joint": 1.0,
-                "FL_calf_joint": -1.5,
-                "RL_calf_joint": -1.5,
-                "FR_calf_joint": -1.5,
-                "RR_calf_joint": -1.5,
-            },
+    state: Go2State = default(
+        Go2State(
             pos=[0.0, 0.0, 0.42],
             quat=[1.0, 0.0, 0.0, 0.0],
         )
@@ -71,55 +91,90 @@ class Go2Config(RobotConfig):
     links_to_keep: list[str] = default(["FL_foot", "FR_foot", "RL_foot", "RR_foot"])
     self_collisions: bool = True
 
+    def _create(self, scene: gs.Scene) -> RigidEntity:
+        """Create the robot asset."""
+        return self.asset.create(
+            scene,
+            pos=self.state.pos,
+            quat=self.state.quat,
+            links_to_keep=self.links_to_keep,
+            collision=True,
+        )
+
+    def create(self, scene: gs.Scene) -> "Go2Robot":
+        """Create a Go2 robot instance."""
+        return Go2Robot(scene, self)
+
     @property
     def dof_names(self):
         return list(self.state.joints.keys())
 
 
+@dataclass
+class PipeState:
+    """Dynamic state that changes after every pipeline step.
+
+    Attributes:
+    q: (q_size,) joint position vector
+    qd: (qd_size,) joint velocity vector
+    x: (num_links,) link position in world frame
+    xd: (num_links,) link velocity in world frame
+    contact: calculated contacts
+    """
+
+    q: jax.Array
+    qd: jax.Array
+    # x: Transform
+    # xd: Motion
+    # contact: Optional[Contact]
+
+
 class Go2Robot(Robot):
-    def __init__(self, scene: gs.Scene, cfg: Go2Config, n_envs: int, color: Tuple | None = None):
-        # TODO: Figure out spaces without passing n_envs through
+    def __init__(self, scene: gs.Scene, cfg: Go2Config):
         self.cfg = cfg
+        self.robot = self.cfg._create(scene)
+        # self.robot.set_dofs_stiffness(
+        # self.robot.set_dofs_damping(
 
-        # TODO move to self.cfg.robot.asset.create(scene) API
-        # or add self.cfg.robot.create(scene)
+    @property
+    def wrapped(self) -> RigidEntity:
+        """Return the wrapped RigidEntity."""
+        return self.robot
 
-        self.robot = scene.add_entity(
-            gs.morphs.URDF(
-                file=cfg.asset.file,
-                pos=cfg.state.pos,
-                quat=cfg.state.quat,
-                # merge_fixed_links= False # needed for feet else links to keep
-                links_to_keep=cfg.links_to_keep,
-            ),
-            surface=gs.surfaces.Default(color=color),
-        )
+    @property
+    def action_space(self) -> spaces.Box:
+        """Define the action space for the Go2 robot."""
+        # TODO(dle): Find Correct Joint Ranges
+        j = len(self.cfg.state.joints)
+        return spaces.Box(low=-np.pi, high=np.pi, shape=(j,), dtype=np.float32)
+
+    @property
+    def observation_space(self) -> spaces.Dict:
+        """Define the observation space for the Go2 robot."""
 
         # TODO(dle): Add correct min and max values
-        self.observation_space = spaces.Dict(
+        # TODO make dynamic, read an observation to define the shape
+
+        def _float_inf(shape):
+            _s = spaces.Box(low=-np.inf, high=np.inf, shape=shape, dtype=np.float32)
+            return _s
+
+        ospace = spaces.Dict(
             {
-                "base_pos": spaces.Box(-np.inf, np.inf, shape=(n_envs, 3), dtype=np.float32),
-                "base_quat": spaces.Box(-np.inf, np.inf, shape=(n_envs, 4), dtype=np.float32),
-                "base_velo": spaces.Box(-np.inf, np.inf, shape=(n_envs, 3), dtype=np.float32),
-                "base_ang": spaces.Box(-np.inf, np.inf, shape=(n_envs, 3), dtype=np.float32),
-                "link_pos": spaces.Box(-np.inf, np.inf, shape=(n_envs, 12, 3), dtype=np.float32),
-                "link_quat": spaces.Box(-np.inf, np.inf, shape=(n_envs, 12, 4), dtype=np.float32),
-                "link_vel": spaces.Box(-np.inf, np.inf, shape=(n_envs, 12, 3), dtype=np.float32),
-                "link_links_ang": spaces.Box(-np.inf, np.inf, shape=(n_envs, 12, 3), dtype=np.float32),
-                # NOTE(dle): Requires Current Genesis Branch
-                # "link_acc": spaces.Box(-np.inf, np.inf, shape=(12, 3), dtype=np.float32),
+                "base_pos": _float_inf((3,)),
+                "base_quat": _float_inf((4,)),
+                "base_velo": _float_inf((3,)),
+                "base_ang": _float_inf((3,)),
+                "link_pos": _float_inf((12, 3)),
+                "link_quat": _float_inf((12, 4)),
+                "link_vel": _float_inf((12, 3)),
+                "link_links_ang": _float_inf((12, 3)),
             }
         )
-        self.action_space = spaces.Box(
-            low=-1.0,  # TODO(dle): Find Correct Joint Ranges
-            high=1.0,
-            shape=(n_envs, len(cfg.asset.local_dofs)),
-            dtype=np.float32,
-        )
+        return ospace
 
-    def reset_idx(self, idx):
-        # TODO
-        pass
+        # NOTE(dle): Requires Current Genesis Branch
+        # "link_acc": spaces.Box(-np.inf, np.inf, shape=(12, 3), dtype=np.float32),
 
     def act(self, action: torch.Tensor, mode: str = "position"):
         # FEATURE: Velocity/Force if needed
@@ -127,19 +182,27 @@ class Go2Robot(Robot):
         if mode == "position":
             self.robot.control_dofs_position(
                 position=action,
-                dofs_idx_local=np.array([6, 8, 7, 9, 10, 12, 11, 13, 14, 16, 15, 17]),
+                dofs_idx_local=self.dofs,
             )
 
-    def observe_state(self) -> Dict:
+    def observe(self) -> Dict:
         obs = {
-            "base_pos": self.robot.get_pos(),
-            "base_quat": self.robot.get_quat(),
-            "base_velo": self.robot.get_vel(),
-            "base_ang": self.robot.get_ang(),
-            "link_pos": self.robot.get_links_pos(),
-            "link_quat": self.robot.get_links_quat(),
-            "link_vel": self.robot.get_links_vel(),
-            "link_links_ang": self.robot.get_links_ang(),
+            "base": {
+                "pos": self.robot.get_pos(),
+                "quat": self.robot.get_quat(),
+                "velo": self.robot.get_vel(),
+                "ang": self.robot.get_ang(),
+            },
+            "link": {
+                "pos": self.robot.get_links_pos(),
+                "quat": self.robot.get_links_quat(),
+                "velo": self.robot.get_links_vel(),
+                "ang": self.robot.get_links_ang(),
+            },
+            "dof": {
+                "position": self.robot.get_dofs_position(),
+                "velocity": self.robot.get_dofs_velocity(),
+            },
             # NOTE(dle): Requires Current Genesis Branch
             # "link_acc": self.robot.get_links_acc(),
             # NOTE(dle): Requires Current Genesis Branch
@@ -150,9 +213,6 @@ class Go2Robot(Robot):
     # FEATURE
     def randomize(self, cfg):
         pass
-
-    def compute_observations(self) -> Dict:
-        return self.observe_state()
 
     @property
     def dofs(self):
@@ -204,7 +264,7 @@ class Go2Robot(Robot):
         lim[:, 1] = m + factor
         return lim
 
-    def observe(
+    def _observe_walk(
         self,
         inv_base_init_quat,
         global_gravity,
@@ -252,33 +312,48 @@ class Go2Robot(Robot):
         )
         return obs
 
-    def reset(self, envs_idx):
-        if len(envs_idx) == 0:
+    def reset(self, envs_idx: list[int]):
+        _B = len(envs_idx)
+        if _B == 0:
             return
 
-        # reset dofs
-        self.dof_pos[envs_idx] = self.default_dof_pos
-        self.dof_vel[envs_idx] = 0.0
-        self.robot.robot.set_dofs_position(
-            position=self.dof_pos[envs_idx],
-            dofs_idx_local=self.robot.dofs,
+        # if state is not None:
+        # raise NotImplementedError("passed arg reset not implemented")
+
+        # TODO joint_pos flattens the joints . make sure the idxs are correct
+        def _batch_tile(item: list[int]):
+            return torch.Tensor(item).tile((_B, 1))
+
+        kp = torch.Tensor([self.cfg.control.kp for _ in range(len(self.dofs))])
+        kd = torch.Tensor([self.cfg.control.kd for _ in range(len(self.dofs))])
+        self.robot.set_dofs_kp(kp, dofs_idx_local=self.dofs)
+        self.robot.set_dofs_kv(kd, dofs_idx_local=self.dofs)
+
+        self.robot.set_dofs_position(
+            # position=self.cfg.state.joints[envs_idx], # certain states
+            position=_batch_tile(list(self.cfg.state.joints.values())),
+            dofs_idx_local=self.dofs,
             zero_velocity=True,
             envs_idx=envs_idx,
         )
 
-        # reset base
-        self.base_pos[envs_idx] = self.cfg.state.pos.reshape(1, -1)
-        self.base_quat[envs_idx] = self.cfg.state.quat.reshape(1, -1)
-        self.robot.robot.set_pos(self.base_pos[envs_idx], zero_velocity=False, envs_idx=envs_idx)
-        self.robot.robot.set_quat(self.base_quat[envs_idx], zero_velocity=False, envs_idx=envs_idx)
-        self.base_lin_vel[envs_idx] = 0
-        self.base_ang_vel[envs_idx] = 0
-        self.robot.robot.zero_all_dofs_velocity(envs_idx)
+        self.robot.set_pos(_batch_tile(self.cfg.state.pos), zero_velocity=False, envs_idx=envs_idx)
+        self.robot.set_quat(_batch_tile(self.cfg.state.quat), zero_velocity=False, envs_idx=envs_idx)
+        self.robot.zero_all_dofs_velocity(envs_idx)
 
+        # reset dofs
+        # self.dof_pos[envs_idx] = self.default_dof_pos
+        # self.dof_vel[envs_idx] = 0.0
+        # reset base
+        # self.base_pos[envs_idx] = self.cfg.state.pos.reshape(1, -1)
+        # self.base_quat[envs_idx] = self.cfg.state.quat.reshape(1, -1)
+        # reset velocity
+        # self.base_lin_vel[envs_idx] = 0
+        # self.base_ang_vel[envs_idx] = 0
         # reset buffers
-        self.last_actions[envs_idx] = 0.0
-        self.last_dof_vel[envs_idx] = 0.0
-        self.episode_length_buf[envs_idx] = 0
-        self.reset_buf[envs_idx] = True
+        # self.last_actions[envs_idx] = 0.0
+        # self.last_dof_vel[envs_idx] = 0.0
+        # self.episode_length_buf[envs_idx] = 0
+        # self.reset_buf[envs_idx] = True
 
         # TODO observe state
