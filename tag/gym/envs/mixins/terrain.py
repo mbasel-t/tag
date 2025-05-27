@@ -52,6 +52,10 @@ class Terrain:
         return self.type.value
 
 
+class Arena:
+    """terrain + obstacles"""
+
+
 class TerrainMixin:
     def validate(self):
         # TODO this should go somewhere else ? like terrain config
@@ -59,6 +63,12 @@ class TerrainMixin:
             self.cfg.terrain.curriculum = False
 
     def _init_terrain(self):
+        self.terrain = self.scene.add_entity(gs.morphs.Plane(collision=True))
+        self.terrain.set_friction(self.cfg.terrain.friction)
+        # TODO(mbt): Implement Terrain System
+        # TODO(mbt): Obstacle System
+
+    def _init_heightfield_terrain(self):
         # add terrain
         typ = self.cfg.terrain.typ
         if typ == "plane":

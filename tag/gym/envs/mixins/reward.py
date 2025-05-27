@@ -8,16 +8,17 @@ from tag.utils import defaultcls
 
 @dataclass
 class RewardScales:
-    # limitation
+    """limitation"""
+
     dof_pos_limits: float = -10.0  # TODO add support
     # collision: float = -1.0 # TODO add support
-    termination: float = -1e-1
+    termination: float = -1  # early termination penalty
 
-    # command tracking
+    """ command tracking """
     tracking_lin_vel: float = 5.0
     tracking_ang_vel: float = 0.5
 
-    # smooth
+    """ smooth """
     lin_vel_z: float = -2.0
     ang_vel_xy: float = -0.05
     orientation: float = -0.0
@@ -27,9 +28,10 @@ class RewardScales:
     base_height: float = -1.0
     action_rate: float = -0.01
 
-    # gait
-    feet_air_time: float = 3.0
+    """ gait """
+    feet_air_time: float = 3.0  # Encourage long swing steps. However, not high clearances.
     feet_stumble = -0.0
+    feet_slip = -0.1  # Penalizing foot slipping on the ground.
     stand_still = -0.0
     similar_to_default: float = -0.05
 
@@ -41,13 +43,15 @@ class RewardConfig:
 
 @dataclass
 class DenseReward(RewardConfig):
-    only_positive_rewards: bool = False  # True  # clip 0,inf
+    only_positive_rewards: bool = True  # True  # clip 0,inf
 
     soft_dof_pos_limit: float = 0.9
     soft_dof_vel_limit: float = 1.0
     soft_torque_limit: float = 1.0
 
     base_height_target: float = 0.36
+    over_height_ok: bool = True  # if True, base height can be higher than target, no penalty
+
     # feet_height_target: float = 0.075
     tracking_sigma: float = 0.25  # tracking reward = exp(-error^2/sigma)
 
@@ -127,11 +131,14 @@ class RewardMixin:
         tgt = self.cfg.rewards.base_height_target
         if getattr(self, "measured_heights", None) is not None:
             base_height = torch.mean(self.base_pos[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
-            rew = torch.square(base_height - tgt)
-            return rew
+        else:  # no terrain
+            base_height = self.base_pos[:, 2]
 
-        # no terrain
-        return torch.square(self.base_pos[:, 2] - tgt)
+        diff = tgt - base_height  # if base is too high, diff<0, maybe clip
+        if self.cfg.rewards.over_height_ok:
+            diff = torch.clip(diff, min=0.0)
+        rew = torch.square(diff)
+        return rew
 
     def _reward_torques(self):
         # Penalize torques
@@ -216,6 +223,25 @@ class RewardMixin:
     def _reward_similar_to_default(self):
         # Penalize joint poses far away from default pose
         return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1)
+
+    def _reward_feet_slip(self, pipeline_state) -> torch.Tensor:
+        """from brax barkour
+        Penalize large feet velocity for feet that are in contact with the ground.
+        """
+
+        contact = self.link_contact_forces[:, self.feet_indices, 2] > 1.0
+        contact_filt = torch.logical_or(contact, self.last_contacts)
+
+        # foot velocity in world frame, not in local frame
+
+        # get velocities at feet which are offset from lower legs
+        # pos = pipeline_state.site_xpos[self._feet_site_id]  # feet position
+        # feet_offset = pos - pipeline_state.xpos[self._lower_leg_body_id]
+        # offset = base.Transform.create(pos=feet_offset)
+        # foot_indices = self._lower_leg_body_id - 1  # we got rid of the world body
+        # foot_vel = offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel
+
+        return torch.sum(torch.square(foot_vel[:, :2]) * contact_filt.reshape((-1, 1)))
 
 
 def _prepare_reward_function(self):

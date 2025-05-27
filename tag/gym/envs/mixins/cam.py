@@ -87,5 +87,5 @@ class CameraMixin:
         if self.cfg.cam.enable and hasattr(self, "cam"):
             dir = BASE / "mp4"
             dir.mkdir(parents=True, exist_ok=True)
-            fname = dir / f'{fname if fname else "video"}.mp4'
+            fname = dir / f"{fname if fname else 'video'}.mp4"
             self.cam.stop_recording(save_to_filename=fname, fps=60)
