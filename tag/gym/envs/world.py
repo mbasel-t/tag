@@ -1,49 +1,41 @@
-"""Minimal env for terrain and camera tests."""
-
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Tuple
 
 from gymnasium import spaces
 
-from tag.gym.base.config import EnvConfig
-from tag.gym.base.env import BaseEnv
-from tag.gym.envs.terrain_mixin import TerrainEnvMixin
+from tag.utils import defaultcls
+
+from .base import BaseEnv, BaseEnvConfig
+from .mixins import CameraMixin, DomainRandMixin, TerrainMixin
+from .mixins.cam import Cam
+from .mixins.terrain import Terrain
 
 
-class WorldEnv(BaseEnv, TerrainEnvMixin):
+@dataclass
+class WorldEnvConfig(BaseEnvConfig):
+    terrain: Terrain = defaultcls(Terrain)
+    cam: Cam = defaultcls(Cam)
+
+
+class WorldEnv(BaseEnv, TerrainMixin, CameraMixin, DomainRandMixin):
     """Environment without robots for sensor-only tasks."""
 
-    def __init__(self, cfg: EnvConfig):
+    def __init__(self, cfg: WorldEnvConfig):
         super().__init__(cfg)
-        self.cfg = cfg
 
-        self._init_scene()
-        self._init_terrain()
+        self._init_terrain()  # TODO uncomment when terrain is ready
+        self._setup_camera()
 
-        self.cam = None
-        if self.cfg.vis.visualized:
-            self.cam = self.scene.add_camera(
-                res=(640, 480),
-                pos=(3.0, 0.0, 2.0),
-                lookat=(0.0, 0.0, 0.0),
-                fov=60,
-                GUI=False,
-            )
-
+        # TODO inherit camera obs space
         self.observation_space = spaces.Dict({})
         self.action_space = spaces.Dict({})
         self._obs: dict = {}
 
-    def step(self, actions: dict | None = None) -> Tuple[dict, None, None, None, None]:
-        self.scene.step()
-        if self.cam is not None:
-            self.cam.render()
-        return self._obs, None, None, None, None
-
     def reset(self) -> Tuple[dict, None]:
-        return {}, None
+        return self.observe(), None
 
-    def get_observations(self) -> Tuple[dict, dict]:
-        return self._obs, {}
-
+    def observe(self) -> Tuple[dict, dict]:
+        self._obs = self.cam.render()
+        return {"imgs": self._obs}
