@@ -1,26 +1,26 @@
 from dataclasses import dataclass
 
-from tag.gym.base.config import EnvConfig, Sim, Solver, Task, Terrain, Viewer, Vis
+from tag.gym.base.config import Task
+from tag.gym.envs.robotic import RobotEnvConfig
+from tag.gym.robots import RobotTyp
 from tag.gym.robots.go2 import Go2Config
 from tag.utils import default, defaultcls
 
 
 @dataclass
-class Go2EnvConfig(EnvConfig):
-    terrain: Terrain = default(Terrain())
-    viewer: Viewer = default(Viewer())
-    vis: Vis = default(Vis())
-    solver: Solver = default(Solver())
-    sim: Sim = default(Sim())
+class Go2EnvConfig(RobotEnvConfig):
     robot: Go2Config = defaultcls(Go2Config)
-    n_robots: int = 1
+
+
+@dataclass
+class MultiGo2EnvConfig(Go2EnvConfig):
+    robot: RobotTyp = defaultcls(Go2Config)
+    n_robots: int = 2
 
 
 # --- Task Environments ---
 
 
-class ChaseEnvConfig(Go2EnvConfig):
+@dataclass
+class ChaseEnvConfig(MultiGo2EnvConfig):
     task: Task = default(Task())
-
-
-# IMPLEMENT: Configurations for Tasks/Rewards/Observations
