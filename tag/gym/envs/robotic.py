@@ -6,6 +6,8 @@ from gymnasium import spaces
 import numpy as np
 import torch
 
+from tag.gym.robots import RobotTyp
+from tag.gym.robots.go2 import Go2Config
 from tag.gym.robots.robot import Robot, RobotConfig
 from tag.utils import defaultcls
 
@@ -19,13 +21,24 @@ class RobotEnvConfig(WorldEnvConfig):
     robot: RobotConfig = defaultcls(RobotConfig)  # usually Go2
 
 
+@dataclass
+class Go2EnvConfig(RobotEnvConfig):
+    robot: Go2Config = defaultcls(Go2Config)
+
+
+@dataclass
+class MultiGo2EnvConfig(Go2EnvConfig):
+    robot: RobotTyp = defaultcls(Go2Config)
+    n_robots: int = 2
+
+
 class RobotEnv(WorldEnv):
     """Environment for robotic tasks."""
 
     def __init__(self, cfg: RobotEnvConfig):
         super().__init__(cfg)
         self.robot: Robot = cfg.robot.create(self.scene)
-        self.robot.reset(np.arange(self.B).tolist())
+        # self.robot.reset(np.arange(self.B).tolist()) # add to build sequence?
 
         # Initialize the observation and action spaces
         self.observation_space = spaces.Dict({})

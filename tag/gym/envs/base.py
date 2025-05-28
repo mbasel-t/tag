@@ -30,7 +30,7 @@ class BaseEnv(_Env):
 
         self.cfg: BaseEnvConfig = cfg
         self.B = cfg.sim.num_envs  # shorthand
-        self.device = gs.gpu
+        self.device = gs.device
         self.cam = None
 
         self._max_steps = int(1e3)

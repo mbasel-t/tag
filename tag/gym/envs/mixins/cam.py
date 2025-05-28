@@ -36,6 +36,7 @@ class Cam:
     pos: list[float] = default([2.0, 0.0, 2.5])  # position
     lookat: list[float] = default([0.0, 0.0, 0.5])  # lookat position
     fov: float = 40.0  # field of view
+    follow: bool = False  # follow entity
 
     @property
     def res(self):
@@ -89,3 +90,9 @@ class CameraMixin:
             dir.mkdir(parents=True, exist_ok=True)
             fname = dir / f"{fname if fname else 'video'}.mp4"
             self.cam.stop_recording(save_to_filename=fname, fps=60)
+
+    def follow(self, entity, fixed_axis: tuple[float] | None = (None, 1.5, 1.0)):
+        """Follow an entity with the camera."""
+        if self.cam is None:
+            return
+        self.cam.follow_entity(entity, fixed_axis=fixed_axis)

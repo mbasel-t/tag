@@ -246,6 +246,15 @@ class Go2Robot(Robot):
     def torque_limits(self):
         return self.robot.get_dofs_force_range(self.dofs)[1]
 
+    def _compute_torques(self, actions):
+        # control_type = 'P'
+        actions_scaled = actions * self.cfg.control.action_scale
+        torques = (
+            self.batched_p_gains * (actions_scaled + self.default_dof_pos - self.dof_pos)
+            - self.batched_d_gains * self.dof_vel
+        )
+        return torques
+
     @property
     def contact_forces(self):
         link_contact_forces = torch.tensor(

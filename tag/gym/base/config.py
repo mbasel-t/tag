@@ -47,12 +47,12 @@ class Vis:
 class Solver:
     collision: bool = True
     joint_limit: bool = True
-    dt: float = 0.02  # 50hz robot step
+    dt: float | None = 0.01  # 100hz sim step physics?
 
 
 @dataclass
 class Sim:
-    dt: int = 0.01  # 100hz sim step physics
+    dt: float = 0.01  # 100hz sim step physics
     num_envs: int = 1
     substeps: int = 1
 

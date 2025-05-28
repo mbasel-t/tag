@@ -15,13 +15,13 @@ class RewardScales:
     termination: float = -1  # early termination penalty
 
     """ command tracking """
-    tracking_lin_vel: float = 5.0
+    tracking_lin_vel: float = 1.0
     tracking_ang_vel: float = 0.5
 
     """ smooth """
     lin_vel_z: float = -2.0
     ang_vel_xy: float = -0.05
-    orientation: float = -0.0
+    orientation: float = -3.0
     # torques: float = -2.0e-4 # TODO add support
     dof_vel: float = -5.0e-4
     dof_acc: float = -2.0e-7
@@ -29,7 +29,7 @@ class RewardScales:
     action_rate: float = -0.01
 
     """ gait """
-    feet_air_time: float = 3.0  # Encourage long swing steps. However, not high clearances.
+    feet_air_time: float = 1.0  # Encourage long swing steps. However, not high clearances.
     feet_stumble = -0.0
     feet_slip = -0.1  # Penalizing foot slipping on the ground.
     stand_still = -0.0
@@ -55,8 +55,8 @@ class DenseReward(RewardConfig):
     # feet_height_target: float = 0.075
     tracking_sigma: float = 0.25  # tracking reward = exp(-error^2/sigma)
 
-    termination_if_roll_greater_than: float = 0.8
-    termination_if_pitch_greater_than: float = 0.8
+    termination_if_roll_greater_than: float = 0.4
+    termination_if_pitch_greater_than: float = 0.4
     termination_if_height_lower_than: float = 0.2
 
     scales: RewardScales = defaultcls(RewardScales)
@@ -85,9 +85,9 @@ class RewardMixin:
         # remove zero scales + multiply non-zero ones by self.dt
         self.reward_scales = {k: scale * self.dt for k, scale in scales.items() if scale != 0}
         self.reward_functions = {k: getattr(self, f"_reward_{k}") for k in self.reward_scales.keys()}
-        self.episode_sums = {k: _float((self.n_envs,)) for k in self.reward_scales.keys()}
+        self.episode_sums = {k: _float((self.B,)) for k in self.reward_scales.keys()}
 
-        self.rew_buf = _float((self.n_envs,))
+        self.rew_buf = _float((self.B,))
 
     def compute_reward(self):
         """Compute rewards
@@ -198,7 +198,8 @@ class RewardMixin:
 
     def _reward_feet_air_time(self):
         # Reward long steps
-        contact = self.link_contact_forces[:, self.feet_indices, 2] > 1.0
+        contact = (self.link_contact_forces[:, self.feet_indices, 2] > 1.0).to(gs.device)
+        print(contact.device, self.last_contacts.device)
         contact_filt = torch.logical_or(contact, self.last_contacts)
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.0) * contact_filt

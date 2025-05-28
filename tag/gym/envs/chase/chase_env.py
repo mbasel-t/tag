@@ -1,12 +1,19 @@
+from dataclasses import dataclass
 from typing import Tuple
 
 from gymnasium.spaces import Dict
 
+from tag.gym.base.config import Task
+from tag.gym.envs.robotic import MultiGo2EnvConfig, RobotEnv
 from tag.gym.robots.multi import MultiRobot
+from tag.utils import default
 
-from ..robotic import RobotEnv
 from ..world import WorldEnv
-from .chase_config import ChaseEnvConfig
+
+
+@dataclass
+class ChaseEnvConfig(MultiGo2EnvConfig):
+    task: Task = default(Task())
 
 
 class Chase(RobotEnv):

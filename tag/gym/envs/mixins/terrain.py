@@ -63,7 +63,7 @@ class TerrainMixin:
             self.cfg.terrain.curriculum = False
 
     def _init_terrain(self):
-        self.terrain = self.scene.add_entity(gs.morphs.Plane(collision=True))
+        self.terrain = self.scene.add_entity(gs.morphs.Plane(collision=True, fixed=True))
         self.terrain.set_friction(self.cfg.terrain.friction)
         # TODO(mbt): Implement Terrain System
         # TODO(mbt): Obstacle System
