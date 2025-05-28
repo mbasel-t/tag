@@ -4,14 +4,16 @@ from pathlib import Path
 
 import genesis as gs
 from go2_train import Config
+from rsl_rl.runners import OnPolicyRunner
 import torch
 from tqdm import tqdm
 import tyro
 
 from tag.gym.envs.walk.walk import Walk
+from tag.names import BASE
 
 
-def load_configs(log_dir, cfg):
+def load_configs(log_dir):
     with open(log_dir / "configs.json", "r") as f:
         _cfgs = json.load(f)
 
@@ -28,6 +30,7 @@ def load_configs(log_dir, cfg):
 class EvalConfig(Config):
     ckpt: int = 100  # the checkpoint to load
     auto_reset: bool = False
+    use_ts: bool = False
 
 
 def main(cfg: EvalConfig):
@@ -35,29 +38,26 @@ def main(cfg: EvalConfig):
     gs.init()
 
     log_dir = Path(f"logs/{cfg.exp_name}")
-    env_cfg, obs_cfg, command_cfg, train_cfg = load_configs(log_dir, cfg)
-
+    env_cfg, obs_cfg, command_cfg, train_cfg = load_configs(log_dir)
     env = Walk(
         cfg,
         env_cfg=env_cfg,
         obs_cfg=obs_cfg,
-        command_cfg=command_cfg,
     )
 
-    # runner = OnPolicyRunner(env, train_cfg, log_dir, device=gs.device)
-    # resume_path = log_dir / f"model_{cfg.ckpt}.pt"
-    # runner.load(str(resume_path))
-    # policy = runner.get_inference_policy(device=gs.device)
+    if cfg.use_ts:
+        pi = torch.jit.load(str(BASE / "policy.ts.pt")).to(gs.device)
+    else:
+        runner = OnPolicyRunner(env, train_cfg, log_dir, device=gs.device)
+        resume_path = log_dir / f"model_{cfg.ckpt}.pt"
+        runner.load(str(resume_path))
+        pi = runner.get_inference_policy(device=gs.device)
 
-    from tag.names import BASE
-
-    pipath = BASE / "joy.ts.pt"
-    policy = torch.jit.load(pipath).to(gs.device)
-
+    env.build()
     obs, _ = env.reset()
     with torch.no_grad():
         for _ in tqdm(range(len(env)), desc="Eval..."):
-            actions = policy(obs)
+            actions = pi(obs)
             obs, rews, dones, infos = env.step(actions)
 
     env.record_visualization("go2_eval")

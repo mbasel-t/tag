@@ -9,9 +9,9 @@ from rich.pretty import pprint
 from rsl_rl.runners import OnPolicyRunner
 import tyro
 
+from tag.gym.envs.walk.walk import Walk, WalkEnvConfig
+
 # from tag.gym.base.config import Control
-from tag.gym.envs.chase.chase_config import ChaseEnvConfig
-from tag.gym.envs.walk.walk import Walk
 
 
 def check_rsl_rl():
@@ -54,6 +54,8 @@ def get_train_cfg(exp_name, max_iterations):
         "runner": {
             "checkpoint": -1,
             "experiment_name": exp_name,
+            "logger": "wandb",
+            "wandb_project": "tag_walk",
             "load_run": -1,
             "log_interval": 1,
             "max_iterations": max_iterations,
@@ -113,17 +115,10 @@ def get_cfgs():
         },
     }
 
-    command_cfg = {
-        "num_commands": 3,
-        "lin_vel_x_range": [-0.5, 1.0],
-        "lin_vel_y_range": [-0.1, 0.1],
-        "ang_vel_range": [-0.2, 0.2],
-    }
-
-    return env_cfg, obs_cfg, command_cfg
+    return env_cfg, obs_cfg
 
 
-def save_configs(log_dir, cfg, env_cfg, obs_cfg, command_cfg, train_cfg):
+def save_configs(log_dir, cfg, env_cfg, obs_cfg, train_cfg):
     if log_dir.exists():
         shutil.rmtree(log_dir)
 
@@ -137,7 +132,6 @@ def save_configs(log_dir, cfg, env_cfg, obs_cfg, command_cfg, train_cfg):
             {
                 "env_cfg": env_cfg,
                 "obs_cfg": obs_cfg,
-                "command_cfg": command_cfg,
                 "train_cfg": train_cfg,
             },
             f,
@@ -146,7 +140,7 @@ def save_configs(log_dir, cfg, env_cfg, obs_cfg, command_cfg, train_cfg):
 
 
 @dataclass
-class Config(ChaseEnvConfig):
+class Config(WalkEnvConfig):
     exp_name: str = "go2-walking"
     train_steps: int = 101
     auto_reset: bool = True
@@ -171,17 +165,16 @@ def main(cfg: Config):
 
     pprint(cfg)
 
-    env_cfg, obs_cfg, command_cfg = get_cfgs()
+    env_cfg, obs_cfg = get_cfgs()
     train_cfg = get_train_cfg(cfg.exp_name, cfg.train_steps)
 
     log_dir = Path(f"logs/{cfg.exp_name}")
-    save_configs(log_dir, cfg, env_cfg, obs_cfg, command_cfg, train_cfg)
+    save_configs(log_dir, cfg, env_cfg, obs_cfg, train_cfg)
 
     env = Walk(
         cfg,
         env_cfg=env_cfg,
         obs_cfg=obs_cfg,
-        command_cfg=command_cfg,
     )
 
     runner = OnPolicyRunner(env, train_cfg, log_dir, device=gs.device)
