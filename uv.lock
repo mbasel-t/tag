@@ -516,7 +516,7 @@ wheels = [
 [[package]]
 name = "genesis-world"
 version = "0.2.1"
-source = { git = "https://github.com/Genesis-Embodied-AI/Genesis#135f9a0aed652d1d1facf2f3c9c612898300fa41" }
+source = { git = "https://github.com/Genesis-Embodied-AI/Genesis?rev=d0a3de35694d101b7017e1bf164cf06996e8c1a4#d0a3de35694d101b7017e1bf164cf06996e8c1a4" }
 dependencies = [
     { name = "coacd" },
     { name = "freetype-py" },
@@ -2822,6 +2822,8 @@ dependencies = [
     { name = "matplotlib" },
     { name = "mediapy" },
     { name = "open3d" },
+    { name = "pyopengl" },
+    { name = "pyopengl-accelerate" },
     { name = "pytest" },
     { name = "rich" },
     { name = "rsl-rl-lib" },
@@ -2841,15 +2843,11 @@ debug = [
 dev = [
     { name = "pre-commit" },
 ]
-gl = [
-    { name = "pyopengl" },
-    { name = "pyopengl-accelerate" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "flax", specifier = ">=0.10.6" },
-    { name = "genesis-world", git = "https://github.com/Genesis-Embodied-AI/Genesis" },
+    { name = "genesis-world", git = "https://github.com/Genesis-Embodied-AI/Genesis?rev=d0a3de35694d101b7017e1bf164cf06996e8c1a4" },
     { name = "gymnasium", specifier = ">=1.1.1" },
     { name = "ipdb", marker = "extra == 'debug'", specifier = ">=0.13.13" },
     { name = "ipython", marker = "extra == 'debug'", specifier = ">=9.0.2" },
@@ -2859,8 +2857,8 @@ requires-dist = [
     { name = "mediapy", specifier = ">=1.2.2" },
     { name = "open3d", specifier = ">=0.19.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.2.0" },
-    { name = "pyopengl", marker = "extra == 'gl'", specifier = ">=3.1.0" },
-    { name = "pyopengl-accelerate", marker = "extra == 'gl'", specifier = ">=3.1.9" },
+    { name = "pyopengl", specifier = ">=3.1.0" },
+    { name = "pyopengl-accelerate", specifier = ">=3.1.9" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "rich", specifier = ">=14.0.0" },
     { name = "rsl-rl-lib", specifier = "==2.2.4" },
@@ -2871,7 +2869,7 @@ requires-dist = [
     { name = "tyro", specifier = ">=0.9.20" },
     { name = "wandb", specifier = ">=0.19.11" },
 ]
-provides-extras = ["gl", "debug", "dev"]
+provides-extras = ["debug", "dev"]
 
 [[package]]
 name = "taichi"
