@@ -17,6 +17,12 @@ def main(_gpu_id):
     parser.add_argument("-v", "--vis", action="store_true", default=False)
     args = parser.parse_args()
 
+    ########################## CAMERA SETTING ##########################
+    #            (set true if recording, false otherwise)
+
+    recording = False
+
+
     ########################## init ##########################
     # get current gpu
     torch.cuda.set_device(_gpu_id)
@@ -64,26 +70,31 @@ def main(_gpu_id):
 
     ########################## put the camera ##########################
 
-    cam = scene.add_camera(
-        res    = (640, 480),
-        pos    = (3.5, 0.0, 2.5+z_off),
-        lookat = (0, 0, 0.5+z_off),
-        fov    = 30,
-        GUI    = False,
-    )
+    if recording:
+        cam = scene.add_camera(
+            res    = (640, 480),
+            pos    = (3.5, 0.0, 2.5+z_off),
+            lookat = (0, 0, 0.5+z_off),
+            fov    = 30,
+            GUI    = False,
+        )
 
     ########################## build ##########################
-    scene.build()
-    cam.start_recording()
+    B = 2000
+    scene.build(n_envs=B, env_spacing=(1.0, 1.0))
+
+    if recording: cam.start_recording()
 
     for i in range(400):
         scene.step()
-        cam.set_pose(
-            pos    = (10.0 * np.sin(i / 100), 10.0 * np.cos(i / 100), 2+z_off),
-            lookat = (0, 0, 0.5+z_off),
-        )
-        cam.render()
-    cam.stop_recording(save_to_filename='video_multiGPU_' + str(gpu_id) + '.mp4', fps=60)
+        if recording:
+            cam.set_pose(
+                pos    = (10.0 * np.sin(i / 100), 10.0 * np.cos(i / 100), 2+z_off),
+                lookat = (0, 0, 0.5+z_off),
+            )
+            cam.render()
+
+    if recording: cam.stop_recording(save_to_filename='video_multiGPU_' + str(gpu_id) + '.mp4', fps=60)
 
 
 def run(gpu_id, func):
