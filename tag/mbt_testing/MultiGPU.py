@@ -1,17 +1,13 @@
 import multiprocessing
-import os
-import argparse
-
-import torch
-
-import genesis as gs
-
-import numpy as np
-
-from TerrainTest import TerrainManager
 
 
 def main(_gpu_id):
+
+    import genesis as gs
+    import numpy as np
+    from TerrainTest import TerrainManager
+    import torch
+    import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--vis", action="store_true", default=False)
@@ -29,13 +25,16 @@ def main(_gpu_id):
     gpu_id = torch.cuda.current_device()
     print("gpu_id:", gpu_id, "/", torch.cuda.device_count())
     # quit()
+    # os.environ["CUDA_VISIBLE_DEVICES"] = str(_gpu_id)
     gs.init(backend=gs.gpu, logger_verbose_time=True)
+    # print(str(gs.device))
+    # quit()
 
     ########################## create a scene ##########################
     scene = gs.Scene(
         show_viewer = False,
         viewer_options = gs.options.ViewerOptions(
-            res           = (640, 480),
+            res           = (320, 240),
             camera_pos    = (3.5, 0.0, 2.5),
             camera_lookat = (0.0, 0.0, 0.5),
             camera_fov    = 40,
@@ -53,11 +52,11 @@ def main(_gpu_id):
     )
 
     ########################## plane & terrain ##########################
-    plane = scene.add_entity(
-        gs.morphs.Plane(),
-    )
+    # plane = scene.add_entity(
+    #     gs.morphs.Plane(),
+    # )
     
-    n, size, z_off = 1, 5.0, 10
+    n, size, z_off = 2, 5.0, 10
     subterrain_types = ["flat_terrain", "random_uniform_terrain", "pyramid_sloped_terrain", "discrete_obstacles_terrain"]
 
     test_terrain = TerrainManager(
@@ -66,6 +65,20 @@ def main(_gpu_id):
 
     terrain = scene.add_entity(
         test_terrain.terrain()
+    )
+
+    terrain = scene.add_entity(
+        gs.morphs.URDF(
+            file="urdf/go2/urdf/go2.urdf",
+            pos=(0.5, 0.0, z_off+0.5)
+        )
+    )
+
+    terrain = scene.add_entity(
+        gs.morphs.URDF(
+            file="urdf/go2/urdf/go2.urdf",
+            pos=(-0.5, 0.0, z_off+0.5)
+        )
     )
 
     ########################## put the camera ##########################
@@ -80,12 +93,12 @@ def main(_gpu_id):
         )
 
     ########################## build ##########################
-    B = 2000
-    scene.build(n_envs=B, env_spacing=(1.0, 1.0))
+    B = 10000
+    scene.build(n_envs=B, env_spacing=(4.0, 4.0))
 
     if recording: cam.start_recording()
 
-    for i in range(400):
+    for i in range(100):
         scene.step()
         if recording:
             cam.set_pose(
@@ -99,15 +112,16 @@ def main(_gpu_id):
 
 def run(gpu_id, func):
     # Set environment args
-    # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     os.environ["TI_VISIBLE_DEVICE"] = str(gpu_id)
     os.environ["EGL_DEVICE_ID"] = str(gpu_id)
     # main script
-    func(gpu_id)
+    func(0)
 
 ## chat code ##
 def spawn_processes():
-    num_gpus = torch.cuda.device_count()
+    num_gpus = 4
     processes = []
     for i in range(num_gpus):
         p = multiprocessing.Process(target=run, args=(i, main))
