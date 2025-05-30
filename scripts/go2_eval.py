@@ -17,13 +17,13 @@ def load_configs(log_dir):
     with open(log_dir / "configs.json", "r") as f:
         _cfgs = json.load(f)
 
-    env_cfg, obs_cfg, command_cfg, train_cfg = (
+    env_cfg, obs_cfg,  train_cfg = (
         _cfgs["env_cfg"],
         _cfgs["obs_cfg"],
-        _cfgs["command_cfg"],
+        # _cfgs["command_cfg"],
         _cfgs["train_cfg"],
     )
-    return env_cfg, obs_cfg, command_cfg, train_cfg
+    return env_cfg, obs_cfg,  train_cfg
 
 
 @dataclass
@@ -31,14 +31,15 @@ class EvalConfig(Config):
     ckpt: int = 100  # the checkpoint to load
     auto_reset: bool = False
     use_ts: bool = False
+    path: str | Path = None
 
 
 def main(cfg: EvalConfig):
     # check_rsl_rl()
     gs.init()
 
-    log_dir = Path(f"logs/{cfg.exp_name}")
-    env_cfg, obs_cfg, command_cfg, train_cfg = load_configs(log_dir)
+    log_dir = Path(cfg.path)
+    env_cfg, obs_cfg,  train_cfg = load_configs(log_dir)
     env = Walk(
         cfg,
         env_cfg=env_cfg,

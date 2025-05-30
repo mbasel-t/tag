@@ -176,6 +176,7 @@ def main(cfg: Config):
         env_cfg=env_cfg,
         obs_cfg=obs_cfg,
     )
+    env.build()
 
     runner = OnPolicyRunner(env, train_cfg, log_dir, device=gs.device)
     runner.learn(num_learning_iterations=cfg.train_steps, init_at_random_ep_len=True)

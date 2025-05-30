@@ -1,19 +1,53 @@
 from dataclasses import dataclass
 from typing import Tuple
 
+import genesis as gs
+import numpy as np
+import torch
 from gymnasium.spaces import Dict
 
 from tag.gym.base.config import Task
 from tag.gym.envs.robotic import MultiGo2EnvConfig, RobotEnv
+from tag.gym.robots.joystick_go2 import OVERFIT, CommandConfig, JoyStickGo2
 from tag.gym.robots.multi import MultiRobot
-from tag.utils import default
+from tag.utils import default, defaultcls
 
 from ..world import WorldEnv
 
 
 @dataclass
+class Scales:
+    """observation and action scales"""
+
+    action: float = 0.25
+    obs: dict[str, float] = default(
+        {
+            # "num_obs": 60,
+            "lin_vel": 2.0,
+            "ang_vel": 0.25,
+            "dof_pos": 1.0,
+            "dof_vel": 0.05,
+        }
+    )
+
+    def expand(self):
+        cmd_scale = torch.Tensor(
+            [
+                self.obs["lin_vel"],
+                self.obs["lin_vel"],
+                self.obs["ang_vel"],
+            ],
+        ).to(gs.device)
+        return self.obs | {"action": self.action, "cmd": cmd_scale}
+
+
+@dataclass
 class ChaseEnvConfig(MultiGo2EnvConfig):
     task: Task = default(Task())
+    joy: bool = True
+    # Default joystick controller, should be in joy wrapper config
+    cmd: CommandConfig = default(OVERFIT)
+    scales: Scales = defaultcls(Scales)
 
 
 class Chase(RobotEnv):
@@ -31,8 +65,11 @@ class Chase(RobotEnv):
             self.cfg.robot,
             self.cfg.n_robots,  # NOTE(mhyatt) this should be in a multirobot config
         )
-
-        self._init_spaces()
+        if self.cfg.joy:  # manually wrap joy go2
+            for k, r in self.robot.robots.items():
+                self.robot.robots[k] = JoyStickGo2(
+                    r, cmd=self.cfg.cmd, scales=self.cfg.scales
+                )
 
     def set_control_gains(self):
         # TODO: Implement Method - Should this method be in another class?
@@ -51,9 +88,10 @@ class Chase(RobotEnv):
         reward, term, trunc, info = 0.0, False, False, {}
         return obs, reward, term, trunc, info
 
-    def _init_spaces(self):
-        """Define observation and action spaces."""
-        self.observation_space = Dict(
+    """
+    @property
+    def observation_space(self):
+        return  Dict(
             {
                 # TODO: This needs to be properly tiled, solving by passing n_envs through robot
                 "robots": self.robot.observation_space,
@@ -61,5 +99,4 @@ class Chase(RobotEnv):
                 "obstacles": Dict({}),
             }
         )
-
-        self.action_space = self.robot.action_space
+    """

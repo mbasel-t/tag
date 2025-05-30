@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from gymnasium import spaces
+import jax
 import numpy as np
 import torch
+from gymnasium import spaces
 
 from tag.gym.robots import RobotTyp
 from tag.gym.robots.go2 import Go2Config
 from tag.gym.robots.robot import Robot, RobotConfig
-from tag.utils import defaultcls
+from tag.utils import defaultcls, obs2space, spec
 
 from .world import WorldEnv, WorldEnvConfig
 
@@ -40,9 +41,9 @@ class RobotEnv(WorldEnv):
         self.robot: Robot = cfg.robot.create(self.scene)
         # self.robot.reset(np.arange(self.B).tolist()) # add to build sequence?
 
-        # Initialize the observation and action spaces
-        self.observation_space = spaces.Dict({})
-        self.action_space = spaces.Dict({})
+    @property
+    def action_space(self):
+        return self.robot.action_space
 
     def pre_step(self):
         pass

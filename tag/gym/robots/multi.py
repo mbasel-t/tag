@@ -54,7 +54,7 @@ class MultiRobot(Robot):
 
     def act(self, actions: Dict, mode: str = "position"):
         for k, robot in self.robots.items():
-            robot.act(action=actions[k])
+            robot.act(actions[k])
 
     def observe(self) -> Dict:
         return {k: robot.observe() for k, robot in self.robots.items()}

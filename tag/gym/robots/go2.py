@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from genesis.utils.geom import (inv_quat, quat_to_xyz, transform_by_quat,
+                                transform_quat_by_quat)
 from typing import Dict
 
 import genesis as gs
@@ -58,6 +60,10 @@ class Go2State(RobotState):
     # link_vel: torch.Tensor
     # link_links_ang: torch.Tensor
 
+    @property
+    def dof_pos(self) -> torch.Tensor:
+        """Get the joint positions as a tensor."""
+        return torch.tensor(list(self.joints.values()), device=gs.device)
 
 @dataclass
 class PDControl:
@@ -185,12 +191,28 @@ class Go2Robot(Robot):
                 dofs_idx_local=self.dofs,
             )
 
+    @property
+    def pos(self) -> torch.Tensor:
+        """Get the current position of the robot."""
+        return torch.tensor(self.robot.get_pos(), device=gs.device, dtype=gs.tc_float)
+
+    @property
+    def quat(self) -> torch.Tensor:
+        """Get the current orientation (quaternion) of the robot."""
+        return torch.tensor(self.robot.get_quat(), device=gs.device, dtype=gs.tc_float)
+
+    @property
+    def inv_quat(self) -> torch.Tensor:
+        """Get the inverse quaternion of the robot's orientation."""
+        return inv_quat(self.quat)
+
     def observe(self) -> Dict:
         obs = {
             "base": {
                 "pos": self.robot.get_pos(),
                 "quat": self.robot.get_quat(),
-                "velo": self.robot.get_vel(),
+                "inv_quat": self.inv_quat,
+                "vel": self.robot.get_vel(),
                 "ang": self.robot.get_ang(),
             },
             "link": {
@@ -200,8 +222,8 @@ class Go2Robot(Robot):
                 "ang": self.robot.get_links_ang(),
             },
             "dof": {
-                "position": self.robot.get_dofs_position(),
-                "velocity": self.robot.get_dofs_velocity(),
+                "pos": self.robot.get_dofs_position(self.dofs),
+                "vel": self.robot.get_dofs_velocity(self.dofs),
             },
             # NOTE(dle): Requires Current Genesis Branch
             # "link_acc": self.robot.get_links_acc(),
