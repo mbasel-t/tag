@@ -83,7 +83,7 @@ class RewardMixin:
 
         scales = asdict(self.cfg.rewards.scales)
         # remove zero scales + multiply non-zero ones by self.dt
-        self.reward_scales = {k: scale * self.dt for k, scale in scales.items() if scale != 0}
+        self.reward_scales = {k: scale * self.cfg.sim.dt for k, scale in scales.items() if scale != 0}
         self.reward_functions = {k: getattr(self, f"_reward_{k}") for k in self.reward_scales.keys()}
         self.episode_sums = {k: _float((self.B,)) for k in self.reward_scales.keys()}
 
@@ -94,7 +94,7 @@ class RewardMixin:
         Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
         adds each terms to the episode sums and to the total reward
         """
-        self.rew_buf[:] = 0.0
+        self.rew_buf[:] = 0.0 # reset reward buffer
         for name, fn in self.reward_functions.items():
             rew = fn() * self.reward_scales[name]
 
@@ -109,6 +109,8 @@ class RewardMixin:
             rew = self._reward_termination() * self.reward_scales["termination"]
             self.rew_buf += rew
             self.episode_sums["termination"] += rew
+
+
 
     #
     # ------------ reward functions----------------
@@ -150,7 +152,7 @@ class RewardMixin:
 
     def _reward_dof_acc(self):
         # Penalize dof accelerations
-        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
+        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.cfg.sim.dt), dim=1)
 
     def _reward_action_rate(self):
         # Penalize changes in actions
@@ -198,12 +200,11 @@ class RewardMixin:
 
     def _reward_feet_air_time(self):
         # Reward long steps
-        contact = (self.link_contact_forces[:, self.feet_indices, 2] > 1.0).to(gs.device)
-        print(contact.device, self.last_contacts.device)
+        contact = (self.link_contact_forces[:, self.robot.feet, 2] > 1.0).to(gs.device)
         contact_filt = torch.logical_or(contact, self.last_contacts)
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.0) * contact_filt
-        self.feet_air_time += self.dt
+        self.feet_air_time += self.cfg.sim.dt
         rew_airTime = torch.sum(
             (self.feet_air_time - 0.5) * first_contact, dim=1
         )  # reward only on first contact with the ground
@@ -230,7 +231,7 @@ class RewardMixin:
         Penalize large feet velocity for feet that are in contact with the ground.
         """
 
-        contact = self.link_contact_forces[:, self.feet_indices, 2] > 1.0
+        contact = self.link_contact_forces[:, self.robot.feet, 2] > 1.0
         contact_filt = torch.logical_or(contact, self.last_contacts)
 
         # foot velocity in world frame, not in local frame

@@ -55,6 +55,21 @@ def space2spec(space: spaces.Space):
         return np.zeros(space.shape, dtype=dtype)
     raise TypeError(f"Unsupported space type: {type(space)}")
 
+def obs2space(obs: dict[str, np.ndarray]) -> spaces.Space:
+    """Convert a nested collection of arrays to a ``gymnasium.Space`` tree.
+
+    Each leaf array in the obs is converted to a corresponding Gymnasium space.
+    The function supports nested dictionaries and tuples, as well as common
+    space types like `Box`, `Discrete`, `MultiBinary`, and `MultiDiscrete`.
+    """
+    if isinstance(obs, dict):
+        return spaces.Dict({k: obs2space(v) for k, v in obs.items()})
+    elif isinstance(obs, tuple):
+        return spaces.Tuple(tuple(obs2space(v) for v in obs))
+    elif isinstance(obs, np.ndarray):
+        return spaces.Box(low=obs.min(), high=obs.max(), shape=obs.shape, dtype=obs.dtype)
+    else:
+        raise TypeError(f"Unsupported obs type: {type(obs)}")
 
 def spec2batch_spec(spec, n_envs: int):
     """Stack ``spec`` along a new leading dimension of size ``n_envs``.
