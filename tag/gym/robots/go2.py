@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Tuple
 
 import genesis as gs
 from gymnasium import spaces
@@ -28,64 +28,72 @@ class Go2Config(RobotConfig):
 
     init_state: InitState = default(
         InitState(
+            # default_joint_angles={
+            # "FL_hip_joint": 0.1,
+            # "RL_hip_joint": 0.1,
+            # "FR_hip_joint": -0.1,
+            # "RR_hip_joint": -0.1,
+            # "FL_thigh_joint": 0.8,
+            # "RL_thigh_joint": 1.0,
+            # "FR_thigh_joint": 0.8,
+            # "RR_thigh_joint": 1.0,
+            # "FL_calf_joint": -1.5,
+            # "RL_calf_joint": -1.5,
+            # "FR_calf_joint": -1.5,
+            # "RR_calf_joint": -1.5,
+            # },
             pos=[0.0, 0.0, 0.42],
-            default_joint_angles={
-                "FL_hip_joint": 0.1,
-                "RL_hip_joint": 0.1,
-                "FR_hip_joint": -0.1,
-                "RR_hip_joint": -0.1,
-                "FL_thigh_joint": 0.8,
-                "RL_thigh_joint": 1.0,
-                "FR_thigh_joint": 0.8,
-                "RR_thigh_joint": 1.0,
-                "FL_calf_joint": -1.5,
-                "RL_calf_joint": -1.5,
-                "FR_calf_joint": -1.5,
-                "RR_calf_joint": -1.5,
-            },
         )
     )
 
 
 class Go2Robot(Robot):
-    def __init__(self, scene: gs.Scene, cfg: Go2Config, uid: str):
-        self.uid = uid
+    def __init__(self, scene: gs.Scene, cfg: Go2Config, n_envs: int, color: Tuple | None):
+        # TODO: Figure out spaces without passing n_envs through
         self.cfg = cfg
-        self.robot = scene.add_entity(gs.morphs.URDF(file=cfg.asset.file, pos=cfg.init_state.pos))
+        self.robot = scene.add_entity(
+            gs.morphs.URDF(
+                file=cfg.asset.file,
+                pos=cfg.init_state.pos,
+            ),
+            ### NOTE(dle): Placeholder Color System
+            surface=gs.surfaces.Default(color=color),
+            ###
+        )
 
-        # Define observation and action spaces for this robot
+        # TODO(dle): Add correct min and max values
         self.observation_space = spaces.Dict(
             {
-                "base_pos": spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32),
-                "base_quat": spaces.Box(-np.inf, np.inf, shape=(4,), dtype=np.float32),
-                "base_velo": spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32),
-                "base_ang": spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32),
-                "link_pos": spaces.Box(-np.inf, np.inf, shape=(12, 3), dtype=np.float32),
-                "link_quat": spaces.Box(-np.inf, np.inf, shape=(12, 4), dtype=np.float32),
-                "link_vel": spaces.Box(-np.inf, np.inf, shape=(12, 3), dtype=np.float32),
-                "link_links_ang": spaces.Box(-np.inf, np.inf, shape=(12, 3), dtype=np.float32),
-                "link_acc": spaces.Box(-np.inf, np.inf, shape=(12, 3), dtype=np.float32),
+                "base_pos": spaces.Box(-np.inf, np.inf, shape=(n_envs, 3), dtype=np.float32),
+                "base_quat": spaces.Box(-np.inf, np.inf, shape=(n_envs, 4), dtype=np.float32),
+                "base_velo": spaces.Box(-np.inf, np.inf, shape=(n_envs, 3), dtype=np.float32),
+                "base_ang": spaces.Box(-np.inf, np.inf, shape=(n_envs, 3), dtype=np.float32),
+                "link_pos": spaces.Box(-np.inf, np.inf, shape=(n_envs, 12, 3), dtype=np.float32),
+                "link_quat": spaces.Box(-np.inf, np.inf, shape=(n_envs, 12, 4), dtype=np.float32),
+                "link_vel": spaces.Box(-np.inf, np.inf, shape=(n_envs, 12, 3), dtype=np.float32),
+                "link_links_ang": spaces.Box(-np.inf, np.inf, shape=(n_envs, 12, 3), dtype=np.float32),
+                # NOTE(dle): Requires Current Genesis Branch
+                # "link_acc": spaces.Box(-np.inf, np.inf, shape=(12, 3), dtype=np.float32),
             }
         )
         self.action_space = spaces.Box(
-            low=-1.0,
+            low=-1.0,  # TODO(dle): Find Correct Joint Ranges
             high=1.0,
-            shape=(len(cfg.asset.local_dofs),),
+            shape=(n_envs, len(cfg.asset.local_dofs)),
             dtype=np.float32,
         )
 
     def reset(self):
-        """To Be implemented
-        self.robot.set_pos()
-        """
+        # TODO
         return self.observe_state()
 
     def reset_idx(self, idx):
+        # TODO
         pass
 
     def act(self, action: torch.Tensor, mode: str = "position"):
-        # Velocity/Force if needed
-        # NOTE(dle) Couldn't get config to work for some reason
+        # FEATURE: Velocity/Force if needed
+        # NOTE(dle): dofs_idx_local should import from Go2Config, needs to be fixed.
         if mode == "position":
             self.robot.control_dofs_position(
                 position=action,
@@ -96,20 +104,22 @@ class Go2Robot(Robot):
         obs = {
             "base_pos": self.robot.get_pos(),
             "base_quat": self.robot.get_quat(),
-            # "base_velo": self.robot.get_velo(), 
-            # "base_ang": self.robot.get_ang(),
+            "base_velo": self.robot.get_vel(),
+            "base_ang": self.robot.get_ang(),
             "link_pos": self.robot.get_links_pos(),
             "link_quat": self.robot.get_links_quat(),
             "link_vel": self.robot.get_links_vel(),
-            # "link_links_ang": self.robot.get_links_ang(),
+            "link_links_ang": self.robot.get_links_ang(),
+            # NOTE(dle): Requires Current Genesis Branch
             # "link_acc": self.robot.get_links_acc(),
-            # "link_force": self.robot.get_links_net_contact_force() # Newer Genesis Version Needed
+            # NOTE(dle): Requires Current Genesis Branch
+            # "link_force": self.robot.get_links_net_contact_force()
         }
         return obs
 
+    # FEATURE
     def randomize(self, cfg):
         pass
 
     def compute_observations(self) -> Dict:
-        """Collect observations from the robot."""
         return self.observe_state()

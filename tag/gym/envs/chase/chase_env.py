@@ -1,49 +1,54 @@
 """Chase environment implementation."""
 
-from typing import Dict as TDict
 from typing import Tuple
 
-import genesis as gs
 from gymnasium.spaces import Dict
 import torch
 
 from tag.gym.base.env import BaseEnv
 from tag.gym.envs.terrain_mixin import TerrainEnvMixin
-from tag.gym.robots.go2 import Go2Robot
+from tag.gym.robots.multi import MultiRobot
+from tag.gym.terrain.terrain import Terrain
 
 from .chase_config import ChaseEnvConfig
-from .utils import create_camera, create_scene
+from .utils import create_camera
 
 
 class Chase(BaseEnv, TerrainEnvMixin):
     """Simple two-robot chase environment."""
 
-    def __init__(self, cfg: ChaseEnvConfig = ChaseEnvConfig()):
-        # , args: TDict | None = None, cfg: ChaseEnvConfig = ChaseEnvConfig()):
+    def __init__(self, cfg: ChaseEnvConfig):
         """Create a new environment instance."""
         super().__init__(cfg)
         self.cfg: ChaseEnvConfig = cfg
-        self.n_envs = 4
-        self.n_rendered = 4
-        self.env_spacing = (2.5, 2.5)
 
-        # Scene
-        self.scene: gs.Scene = create_scene(cfg, self.n_rendered)
-
-        # TODO fix
-        # self._init_terrain()
-
-        # Entities
-        # self.robots: MultiRobot = create_robots(self.scene, self.cfg.robotCfg)
-        self.robots = Go2Robot(self.scene, self.cfg.robot, "r1")
-
+        self._init_scene()
         self.cam = create_camera(self.scene, self.cfg.vis.visualized)
 
+        # Entities
+
+        # TODO(mbt): Implement Terrain System
+        # TODO(mbt): Obstacle System
+        # NOTE(dle): Terrain Class Placeholder
+        self.terrain = Terrain(self.scene)
+
+        self.n_robots = 2  # TODO(dle): Place Default Value Somewhere in Task or Config
+
+        # TODO(mbt): Implement Color System
+        self.robots = MultiRobot(
+            self.scene,
+            self.cfg.robot,
+            self.n_robots,
+            self.n_envs,  # NOTE(dle):  Temp Fix
+            [  ### NOTE(dle): Placeholder Color System
+                (1, 0.5, 0, 1.0),
+                (0.0, 1.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0, 1.0),
+                None,
+            ],  ###
+        )
+
         self._init_spaces()
-
-        # self._init_buffers()
-
-        self.build()
 
     def build(self):
         self.scene.build(
@@ -53,12 +58,12 @@ class Chase(BaseEnv, TerrainEnvMixin):
         if self.cam is not None:
             self.cam.start_recording()
 
-    # TODO: Implement Method - Input should be changed to Robot class when completed
+    # TODO: Implement Method - Should this method be in another class?
     def set_control_gains(self):
         pass
 
     # TODO: Properly Implement Step Method - Actions, Updates, etc.
-    def step(self, actions: TDict) -> Tuple[TDict, None, None, None, None]:
+    def step(self, actions: dict) -> Tuple[dict, None, None, None, None]:
         """Advance the simulation by one step."""
         # Execute actions
 
@@ -66,34 +71,26 @@ class Chase(BaseEnv, TerrainEnvMixin):
 
         self.scene.step()
 
-        # Check termination and reset
-        # Compute weward
-        # Compute observations
-        # Create extras
-
         # Visualization
         if self.cfg.vis.visualized:
             self.cam.render()
 
         obs = self.compute_observations()
+        # TODO(dle): Implement Dummy Reward System
         # reward = self.get_reward()
         # return obs, reward, term, trunc, info
         return obs, None, None, None, None
 
     # TODO: Implement Reset Method
-    def reset(self) -> Tuple[TDict, None]:
+    def reset(self) -> Tuple[dict, None]:
         """Reset the environment state."""
         return self.action_space.sample(), None
 
-    # TODO: Review
-    def get_observations(self) -> Tuple[torch.Tensor, TDict]:
-        """Get observation buffer data
-        Returns:
-            Tuple[torch.Tensor, Dict]: A Tuple of the Observation Buffer and any Extras
-        """
+    # NOTE(dle): Do we need?
+    def get_observations(self) -> Tuple[torch.Tensor, dict]:
         return self._obs
 
-    def compute_observations(self) -> TDict:
+    def compute_observations(self) -> dict:
         """Collect observations from robots and environment."""
         robot_obs = self.robots.compute_observations()
         env_obs = {}
@@ -107,6 +104,7 @@ class Chase(BaseEnv, TerrainEnvMixin):
         """Define observation and action spaces."""
         self.observation_space = Dict(
             {
+                # TODO: This needs to be properly tiled, solving by passing n_envs through robots
                 "robots": self.robots.observation_space,
                 "terrain": Dict({}),
                 "obstacles": Dict({}),
