@@ -44,19 +44,27 @@ class TerrainManager:
 
     def add_walls(
         self,
-        n:int=1,
+        n:int=3,
         max_n:int=-1,
-        size:int=10,
-        max_size:int=-1,
+        length:int=10,
+        max_length:int=-1,
+        width:int=3,
+        max_width:int=-1,
+        height:int=100,
+        max_height:int=-1,
         horizontal_only:bool=False,
         vertical_only:bool=False
     ): 
-        if (not (horizontal_only and vertical_only)) and (not size < 0) and (not n < 0):
+        if (not (horizontal_only and vertical_only)) and (not length < 0) and (not width < 0) and (not height < 0) and (not n < 0):
             self.result.randomize_walls(
                 n=n,
                 max_n=max_n,
-                size=size,
-                max_size=max_size,
+                length=length,
+                max_length=max_length,
+                width=width,
+                max_width=max_width,
+                height=height,
+                max_height=max_height,
                 horizontal_only=horizontal_only,
                 vertical_only=vertical_only
             )
@@ -261,15 +269,90 @@ class WalledTerrain:
             height_field= self.heightfield
         )
 
-    def randomize_walls(self, n, max_n, size, max_size, horizontal_only, vertical_only):
+    def randomize_walls(self,
+        n,
+        max_n,
+        length,
+        max_length,
+        width,
+        max_width,
+        height,
+        max_height,
+        horizontal_only,
+        vertical_only,
+    ):
         # TODO: add randomization to ts
 
-        # sample
-        for x in range(len(self.walls)):
-            self.walls[x,0] = 70
+        ################## Validate inputs ##################
+        if n < max_n:
+            n = np.random.randint(n, max_n)
+        
+        if vertical_only: # flip horizontal and vertical
+            temp = width
+            width = length
+            length = temp
+
+            temp = max_width
+            max_width = max_length
+            max_length = temp
+            randdirection = False
+        elif not horizontal_only:
+            randdirection = True
+        else:
+            randdirection = False
+
+        ################## Generate walls ##################
+        for num in range(n):
+            if width < max_width:
+                curr_width = np.random.randint(width, max_width)
+            else:
+                curr_width = width
+            
+            if length < max_length:
+                curr_length = np.random.randint(length, max_length)
+            else:
+                curr_length = length
+            
+            if height < max_height:
+                curr_height = np.random.randint(height, max_height)
+            else:
+                curr_height = height
+
+            subterrain_rows = len(self.walls)
+            subterrain_cols = len(self.walls[0])
+            
+            if randdirection and np.random.randint(2)==0:
+                x_pos = np.random.randint(subterrain_rows - curr_length)
+                y_pos = np.random.randint(subterrain_cols - curr_width)
+                self.place_wall(x_pos, y_pos, x_pos+curr_length, y_pos+curr_width, curr_height)
+            else:
+                x_pos = np.random.randint(subterrain_rows - curr_width)
+                y_pos = np.random.randint(subterrain_cols - curr_length)
+                self.place_wall(x_pos, y_pos, x_pos+curr_width, y_pos+curr_length, curr_height)
+
+
+        # # sample
+        # for x in range(len(self.walls)):
+        #     self.walls[x,0] = 70
 
         self._add_walls()
         self._generate_terrain()
+
+        # self.phf()
+
+    def place_wall(self, top_left_x_pos:int, top_left_y_pos:int, bot_right_x_pos:int, bot_right_y_pos:int, height:int):
+        height += self._find_highest_point(top_left_x_pos, top_left_y_pos, bot_right_x_pos, bot_right_y_pos)
+
+        for x in range(top_left_x_pos, bot_right_x_pos):
+            for y in range(top_left_y_pos, bot_right_y_pos):
+                self.walls[x,y] = max(self.walls[x,y], height) - self.base_heightfield[x,y]
+
+    def _find_highest_point(self, top_left_x_pos:int, top_left_y_pos:int, bot_right_x_pos:int, bot_right_y_pos:int):
+        result = self.base_heightfield[0,0]
+        for x in range(top_left_x_pos, bot_right_x_pos):
+            for y in range(top_left_y_pos, bot_right_y_pos):
+                result = max(result, self.base_heightfield[x,y])
+        return result
 
     def terrain(self):
         return self.result
@@ -330,7 +413,18 @@ def main():
         n, size, z_off, 0.05, 0.01, subterrain_types
     )
 
-    test_terrain.add_walls()
+    test_terrain.add_walls(
+        n=13,
+        max_n=-1,
+        length=35,
+        max_length=50,
+        width=3,
+        max_width=7,
+        height=40,
+        max_height=60,
+        horizontal_only=False,
+        vertical_only=False
+    )
 
     terrain = scene.add_entity(
         test_terrain.terrain()
