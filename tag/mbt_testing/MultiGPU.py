@@ -93,7 +93,7 @@ def main(_gpu_id):
         )
 
     ########################## build ##########################
-    B = 10000
+    B = 22000 # current max
     scene.build(n_envs=B, env_spacing=(4.0, 4.0))
 
     if recording: cam.start_recording()
