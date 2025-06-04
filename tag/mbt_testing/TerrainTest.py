@@ -46,11 +46,11 @@ class TerrainManager:
         self,
         n:int=3,
         max_n:int=-1,
-        length:int=10,
+        length:int=40,
         max_length:int=-1,
         width:int=3,
         max_width:int=-1,
-        height:int=100,
+        height:int=80,
         max_height:int=-1,
         horizontal_only:bool=False,
         vertical_only:bool=False
@@ -68,6 +68,18 @@ class TerrainManager:
                 horizontal_only=horizontal_only,
                 vertical_only=vertical_only
             )
+    
+    def add_perimeter_walls(
+        self,
+        thickness:int=1,
+        height:int=100,
+        max_height:int=-1
+    ):
+        if not (thickness < 1 or height < 0):
+            if height < max_height:
+                height = np.random.randint(height, max_height)
+            
+            self.result.add_perimeter_walls(thickness, height)
     
     def terrain(self):
         return self.result.terrain()
@@ -281,8 +293,6 @@ class WalledTerrain:
         horizontal_only,
         vertical_only,
     ):
-        # TODO: add randomization to ts
-
         ################## Validate inputs ##################
         if n < max_n:
             n = np.random.randint(n, max_n)
@@ -296,10 +306,10 @@ class WalledTerrain:
             max_width = max_length
             max_length = temp
             randdirection = False
-        elif not horizontal_only:
-            randdirection = True
-        else:
+        elif horizontal_only:
             randdirection = False
+        else:
+            randdirection = True
 
         ################## Generate walls ##################
         for num in range(n):
@@ -330,19 +340,54 @@ class WalledTerrain:
                 y_pos = np.random.randint(subterrain_cols - curr_length)
                 self.place_wall(x_pos, y_pos, x_pos+curr_width, y_pos+curr_length, curr_height)
 
+        self._add_walls()
+        self._generate_terrain()
+    
+    def add_perimeter_walls(self, thickness:int, height:int):
+        subterrain_rows = len(self.walls)
+        subterrain_cols = len(self.walls[0])
 
-        # # sample
-        # for x in range(len(self.walls)):
-        #     self.walls[x,0] = 70
+        ################## Define key points ##################
+        p1_topleft = (0,0)
+        p1_botright = (thickness, subterrain_cols-thickness)
+        
+        p2_topleft = (0, subterrain_cols-thickness)
+        p2_botright = (subterrain_rows-thickness, subterrain_cols)
+        
+        p3_topleft = (subterrain_rows-thickness, thickness)
+        p3_botright = (subterrain_rows, subterrain_cols)
+
+        p4_topleft = (thickness, 0)
+        p4_botright = (subterrain_rows, thickness)
+
+        ################## Find max height under wall area ##################
+        height += max(
+            self._find_highest_point(p1_topleft[0], p1_topleft[1], p1_botright[0], p1_botright[1]),
+            self._find_highest_point(p2_topleft[0], p2_topleft[1], p2_botright[0], p2_botright[1]),
+            self._find_highest_point(p3_topleft[0], p3_topleft[1], p3_botright[0], p3_botright[1]),
+            self._find_highest_point(p4_topleft[0], p4_topleft[1], p4_botright[0], p4_botright[1])
+        )
+
+        ################## Generate walls ##################
+        self._place_wall_at_height(p1_topleft[0], p1_topleft[1], p1_botright[0], p1_botright[1], height),
+        self._place_wall_at_height(p2_topleft[0], p2_topleft[1], p2_botright[0], p2_botright[1], height),
+        self._place_wall_at_height(p3_topleft[0], p3_topleft[1], p3_botright[0], p3_botright[1], height),
+        self._place_wall_at_height(p4_topleft[0], p4_topleft[1], p4_botright[0], p4_botright[1], height)
 
         self._add_walls()
         self._generate_terrain()
 
-        # self.phf()
-
     def place_wall(self, top_left_x_pos:int, top_left_y_pos:int, bot_right_x_pos:int, bot_right_y_pos:int, height:int):
         height += self._find_highest_point(top_left_x_pos, top_left_y_pos, bot_right_x_pos, bot_right_y_pos)
+        self._place_wall_at_height(
+            top_left_x_pos,
+            top_left_y_pos,
+            bot_right_x_pos,
+            bot_right_y_pos,
+            height
+        )
 
+    def _place_wall_at_height(self, top_left_x_pos:int, top_left_y_pos:int, bot_right_x_pos:int, bot_right_y_pos:int, height:int):
         for x in range(top_left_x_pos, bot_right_x_pos):
             for y in range(top_left_y_pos, bot_right_y_pos):
                 self.walls[x,y] = max(self.walls[x,y], height) - self.base_heightfield[x,y]
@@ -393,25 +438,14 @@ def main():
     )
 
     n, size, z_off = 2, 5.0, 10
-    # terrain = scene.add_entity(
-    #     gs.morphs.Terrain(
-    #         n_subterrains=(n,n),
-    #         subterrain_size=(size, size),
-    #         horizontal_scale=0.05,
-    #         vertical_scale=0.01,
-    #         pos=(-size, -size, z_off),
-    #         subterrain_types = [
-    #             ["flat_terrain", "random_uniform_terrain"],
-    #             ["pyramid_sloped_terrain", "discrete_obstacles_terrain"]
-    #         ]
-    #     )
-    # )
 
     subterrain_types = ["flat_terrain", "random_uniform_terrain", "pyramid_sloped_terrain", "discrete_obstacles_terrain"]
 
     test_terrain = TerrainManager(
         n, size, z_off, 0.05, 0.01, subterrain_types
     )
+
+    test_terrain.add_perimeter_walls()
 
     test_terrain.add_walls(
         n=13,
@@ -440,16 +474,13 @@ def main():
 
     scene.build()
 
-    # render rgb, depth, segmentation, and normal
-    # rgb, depth, segmentation, normal = cam.render(rgb=True, depth=True, segmentation=True, normal=True)
-
     cam.start_recording()
     import numpy as np
 
     for i in range(400):
         scene.step()
         cam.set_pose(
-            pos    = (10.0 * np.sin(i / 100), 10.0 * np.cos(i / 100), 2+z_off),
+            pos    = (16.0 * np.sin(i / 100), 16.0 * np.cos(i / 100), 6.5+z_off),
             lookat = (0, 0, 0.5+z_off),
         )
         cam.render()
