@@ -21,7 +21,7 @@ class TerrainFactoryConfig:
     # terrain generation vars
     n:int = 1
     size:float = 5.0
-    z_offset:float = 0.5
+    z_offset:float = 0.0
     horizontal_scale:float = 0.05
     vertical_scale:float = 0.01
     subterrain_types:list = field(default_factory=lambda: ['flat_terrain'])
